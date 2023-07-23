@@ -8,17 +8,20 @@ namespace ChessChallenge.Example
     public class EvilBot : IChessBot
     {
         int CHECKMATE = 100000;
-
         int time_limit = 0;
         DateTime start = DateTime.Now;
-        bool stop_search = false;
+        Move depth_move = new Move();
         Int64 nodes = 0;
 
         public Move Think(Board board, Timer timer)
         {
+            return Iterative_Deepening(board, timer);
+        }
+
+        public Move Iterative_Deepening(Board board, Timer timer)
+        {
             time_limit = timer.MillisecondsRemaining / 120;
             start = DateTime.Now;
-            stop_search = false;
             nodes = 0;
 
             Move[] moves = board.GetLegalMoves();
@@ -26,27 +29,10 @@ namespace ChessChallenge.Example
 
             for (int depth = 1; depth < 100; depth++)
             {
-                Move depth_move = moves[0];
-                int score = Int32.MinValue;
-                foreach (Move move in moves)
-                {
-                    if (stop_search)
-                        break;
+                depth_move = moves[0];
+                int score = Search(board, depth, 0, -CHECKMATE, CHECKMATE);
 
-                    nodes++;
-
-                    board.MakeMove(move);
-                    int new_score = -Search(board, depth - 1, 1);
-                    board.UndoMove(move);
-
-                    if (new_score > score)
-                    {
-                        score = new_score;
-                        depth_move = move;
-                    }
-                }
-
-                if (stop_search)
+                if ((DateTime.Now - start).TotalMilliseconds > time_limit)
                     break;
 
                 best_move = depth_move;
@@ -58,17 +44,12 @@ namespace ChessChallenge.Example
             return best_move;
         }
 
-        public int Search(Board board, int depth, int ply)
+        public int Search(Board board, int depth, int ply, int alpha, int beta)
         {
-            if ((DateTime.Now - start).TotalMilliseconds > time_limit)
-            {
-                stop_search = true;
-                return 0;
-            }
-
             nodes++;
 
-            Move[] moves = board.GetLegalMoves();
+            if ((DateTime.Now - start).TotalMilliseconds > time_limit)
+                return 0;
 
             if (board.IsInCheckmate())
                 return -CHECKMATE + ply;
@@ -79,21 +60,26 @@ namespace ChessChallenge.Example
             if (depth <= 0)
                 return Eval(board);
 
-
-            int score = Int32.MinValue;
+            Move[] moves = board.GetLegalMoves();
             foreach (Move move in moves)
             {
                 board.MakeMove(move);
-                int new_score = -Search(board, depth - 1, ply + 1);
+                int new_score = -Search(board, depth - 1, ply + 1, -beta, -alpha);
                 board.UndoMove(move);
 
-                if (new_score > score)
+                if (new_score > alpha)
                 {
-                    score = new_score;
+                    if (ply == 0)
+                        depth_move = move;
+
+                    if (new_score >= beta)
+                        return beta;
+
+                    alpha = new_score;
                 }
             }
 
-            return score;
+            return alpha;
         }
 
         // Piece values: null, pawn, knight, bishop, rook, queen, king
