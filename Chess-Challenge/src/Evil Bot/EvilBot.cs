@@ -58,7 +58,7 @@ namespace ChessChallenge.Example
                 return 0;
 
             if (depth <= 0)
-                return Eval(board);
+                return Q_Search(board, ply, 0, alpha, beta);
 
             Move[] moves = board.GetLegalMoves();
             foreach (Move move in moves)
@@ -72,6 +72,50 @@ namespace ChessChallenge.Example
                     if (ply == 0)
                         depth_move = move;
 
+                    if (new_score >= beta)
+                        return beta;
+
+                    alpha = new_score;
+                }
+            }
+
+            return alpha;
+        }
+
+        public int Q_Search(Board board, int depth, int ply, int alpha, int beta)
+        {
+            nodes++;
+
+            if ((DateTime.Now - start).TotalMilliseconds > time_limit)
+                return 0;
+
+            if (board.IsInCheckmate())
+                return -CHECKMATE + ply;
+
+            if (board.IsDraw())
+                return 0;
+
+            if (depth <= 0)
+                return Eval(board);
+
+            // Delta Pruning
+            int eval = Eval(board);
+
+            if (eval >= beta)
+                return beta;
+
+            if (eval > alpha)
+                alpha = eval;
+
+            Move[] moves = board.GetLegalMoves(capturesOnly: true);
+            foreach (Move move in moves)
+            {
+                board.MakeMove(move);
+                int new_score = -Q_Search(board, depth - 1, ply + 1, -beta, -alpha);
+                board.UndoMove(move);
+
+                if (new_score > alpha)
+                {
                     if (new_score >= beta)
                         return beta;
 

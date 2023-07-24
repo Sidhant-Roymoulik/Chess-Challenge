@@ -69,7 +69,8 @@ public class MyBot : IChessBot
         if (depth <= 0)
             return Q_Search(board, ply, 0, alpha, beta);
 
-        Move[] moves = board.GetLegalMoves();
+        System.Span<Move> moves = stackalloc Move[256];
+        board.GetLegalMovesNonAlloc(ref moves);
         foreach (Move move in moves)
         {
             board.MakeMove(move);
@@ -116,7 +117,8 @@ public class MyBot : IChessBot
         if (eval > alpha)
             alpha = eval;
 
-        Move[] moves = board.GetLegalMoves(capturesOnly: true);
+        System.Span<Move> moves = stackalloc Move[256];
+        board.GetLegalMovesNonAlloc(ref moves, true);
         foreach (Move move in moves)
         {
             board.MakeMove(move);
@@ -136,7 +138,25 @@ public class MyBot : IChessBot
     }
 
     // Piece values: null, pawn, knight, bishop, rook, queen, king
-    int[] pvm_mg = { 0, 100, 320, 330, 500, 900, 20000 };
+    int[] pvm_mg = { 0, 82, 337, 365, 477, 1025, 20000 };
+
+    int[] mg_king_table = {
+        -65,  23,  16, -15, -56, -34,   2,  13,
+        29,  -1, -20,  -7,  -8,  -4, -38, -29,
+        -9,  24,   2, -16, -20,   6,  22, -22,
+        -17, -20, -12, -27, -30, -25, -14, -36,
+        -49,  -1, -27, -39, -46, -44, -33, -51,
+        -14, -14, -22, -46, -44, -30, -15, -27,
+        1,   7,  -8, -64, -43, -16,   9,   8,
+        -15,  36,  12, -54,   8, -28,  24,  14,
+    };
+
+    public int Flip(Square sq, int color)
+    {
+        if (color == 1)
+            return sq.Index ^ 56;
+        return sq.Index;
+    }
 
     public int Eval(Board board)
     {
@@ -152,6 +172,9 @@ public class MyBot : IChessBot
 
             score[color] += pvm_mg[(int)type] * piece_list.Count;
         }
+
+        score[0] += mg_king_table[Flip(board.GetKingSquare(false), 0)];
+        score[1] += mg_king_table[Flip(board.GetKingSquare(true), 1)];
 
         return score[turn] - score[turn ^ 1];
     }
