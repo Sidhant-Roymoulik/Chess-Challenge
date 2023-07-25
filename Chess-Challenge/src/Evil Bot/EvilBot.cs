@@ -6,134 +6,184 @@ using System.Collections.Generic;
 
 namespace ChessChallenge.Example
 {
-    // A simple bot that can spot mate in one, and always captures the most valuable piece it can.
-    // Plays randomly otherwise.
     public class EvilBot : IChessBot
     {
-        static int[] PieceValue = { 0, 100, 320, 330, 500, 1000, 0 };
-        static List<Move> OrderMoves(Move[] moves)
+        Move bestmoveRoot = Move.NullMove;
+        int nodes = 0;
+
+        // https://www.chessprogramming.org/PeSTO%27s_Evaluation_Function
+        int[] pieceVal = { 0, 100, 310, 330, 500, 1000, 10000 };
+        int[] piecePhase = { 0, 0, 1, 1, 2, 4, 0 };
+        ulong[] psts = { 657614902731556116, 420894446315227099, 384592972471695068, 312245244820264086, 364876803783607569, 366006824779723922, 366006826859316500, 786039115310605588, 421220596516513823, 366011295806342421, 366006826859316436, 366006896669578452, 162218943720801556, 440575073001255824, 657087419459913430, 402634039558223453, 347425219986941203, 365698755348489557, 311382605788951956, 147850316371514514, 329107007234708689, 402598430990222677, 402611905376114006, 329415149680141460, 257053881053295759, 291134268204721362, 492947507967247313, 367159395376767958, 384021229732455700, 384307098409076181, 402035762391246293, 328847661003244824, 365712019230110867, 366002427738801364, 384307168185238804, 347996828560606484, 329692156834174227, 365439338182165780, 386018218798040211, 456959123538409047, 347157285952386452, 365711880701965780, 365997890021704981, 221896035722130452, 384289231362147538, 384307167128540502, 366006826859320596, 366006826876093716, 366002360093332756, 366006824694793492, 347992428333053139, 457508666683233428, 329723156783776785, 329401687190893908, 366002356855326100, 366288301819245844, 329978030930875600, 420621693221156179, 422042614449657239, 384602117564867863, 419505151144195476, 366274972473194070, 329406075454444949, 275354286769374224, 366855645423297932, 329991151972070674, 311105941360174354, 256772197720318995, 365993560693875923, 258219435335676691, 383730812414424149, 384601907111998612, 401758895947998613, 420612834953622999, 402607438610388375, 329978099633296596, 67159620133902 };
+
+        // https://www.chessprogramming.org/Transposition_Table
+        struct TTEntry
         {
-            List<Move> orderedMoves = new List<Move>();
-            foreach (Move move in moves)
+            public ulong key;
+            public Move move;
+            public int depth, score, bound;
+            public TTEntry(ulong _key, Move _move, int _depth, int _score, int _bound)
             {
-                if (move.IsCapture || move.IsPromotion)
+                key = _key; move = _move; depth = _depth; score = _score; bound = _bound;
+            }
+        }
+
+        const int entries = (1 << 20);
+        TTEntry[] tt = new TTEntry[entries];
+
+        public int getPstVal(int psq)
+        {
+            return (int)(((psts[psq / 10] >> (6 * (psq % 10))) & 63) - 20) * 8;
+        }
+
+        public int Evaluate(Board board)
+        {
+            int mg = 0, eg = 0, phase = 0;
+
+            foreach (bool stm in new[] { true, false })
+            {
+                for (var p = PieceType.Pawn; p <= PieceType.King; p++)
                 {
-                    orderedMoves.Insert(0, move);
+                    int piece = (int)p, ind;
+                    ulong mask = board.GetPieceBitboard(p, stm);
+                    while (mask != 0)
+                    {
+                        phase += piecePhase[piece];
+                        ind = 128 * (piece - 1) + BitboardHelper.ClearAndGetIndexOfLSB(ref mask) ^ (stm ? 56 : 0);
+                        mg += getPstVal(ind) + pieceVal[piece];
+                        eg += getPstVal(ind + 64) + pieceVal[piece];
+                    }
                 }
-                else
+
+                mg = -mg;
+                eg = -eg;
+            }
+
+            return (mg * phase + eg * (24 - phase)) / 24 * (board.IsWhiteToMove ? 1 : -1);
+        }
+
+        // https://www.chessprogramming.org/Negamax
+        // https://www.chessprogramming.org/Quiescence_Search
+        public int Search(Board board, Timer timer, int alpha, int beta, int depth, int ply)
+        {
+            nodes++;
+
+            ulong key = board.ZobristKey;
+            bool qsearch = depth <= 0;
+            bool notRoot = ply > 0;
+            int best = -30000;
+
+            // Check for repetition (this is much more important than material and 50 move rule draws)
+            if (notRoot && board.IsRepeatedPosition())
+                return 0;
+
+            TTEntry entry = tt[key % entries];
+
+            // TT cutoffs
+            if (notRoot && entry.key == key && entry.depth >= depth && (
+                entry.bound == 3 // exact score
+                    || entry.bound == 2 && entry.score >= beta // lower bound, fail high
+                    || entry.bound == 1 && entry.score <= alpha // upper bound, fail low
+            )) return entry.score;
+
+            int eval = Evaluate(board);
+
+            // Quiescence search is in the same function as negamax to save tokens
+            if (qsearch)
+            {
+                best = eval;
+                if (best >= beta) return best;
+                alpha = Math.Max(alpha, best);
+            }
+
+            // Generate moves, only captures in qsearch
+            Move[] moves = board.GetLegalMoves(qsearch);
+            int[] scores = new int[moves.Length];
+
+            // Score moves
+            for (int i = 0; i < moves.Length; i++)
+            {
+                Move move = moves[i];
+                // TT move
+                if (move == entry.move) scores[i] = 1000000;
+                // https://www.chessprogramming.org/MVV-LVA
+                else if (move.IsCapture) scores[i] = 100 * (int)move.CapturePieceType - (int)move.MovePieceType;
+            }
+
+            Move bestMove = Move.NullMove;
+            int origAlpha = alpha;
+
+            // Search moves
+            for (int i = 0; i < moves.Length; i++)
+            {
+                if (timer.MillisecondsElapsedThisTurn >= timer.MillisecondsRemaining / 2000) return 30000;
+
+                // Incrementally sort moves
+                for (int j = i + 1; j < moves.Length; j++)
                 {
-                    orderedMoves.Add(move);
+                    if (scores[j] > scores[i])
+                        (scores[i], scores[j], moves[i], moves[j]) = (scores[j], scores[i], moves[j], moves[i]);
                 }
-            }
-            return orderedMoves;
-        }
-        static int[] DistanceToEdge = { 0, 1, 2, 3, 3, 2, 1, 0 };
-        static Func<Square, int>[] PSQT_mg = {
-                                         sq => 0,                                                                                             //null
-                                         sq => sq.Rank*10-10+(sq.Rank==1&&DistanceToEdge[sq.File]!=3?40:0)+(DistanceToEdge[sq.Rank]==3&&DistanceToEdge[sq.File]==3?10:0), //pawn
-                                         sq => (DistanceToEdge[sq.Rank]+DistanceToEdge[sq.File])*10-40,                                       //knight
-                                         sq => (DistanceToEdge[sq.Rank]+DistanceToEdge[sq.File])*10-40,                                       //bishop
-                                         sq => sq.Rank==6?10:0+((sq.Rank==0&&DistanceToEdge[sq.File]==3)?10:0),                               //rook
-                                         sq => (DistanceToEdge[sq.Rank]+DistanceToEdge[sq.File])*5-10,                                        //queen
-                                         sq => (3-DistanceToEdge[sq.Rank]+3-DistanceToEdge[sq.File])*10-5-(sq.Rank>1?50:0)                    //king
-                                        };
-        static Func<Square, int>[] PSQT_eg = {
-                                         sq => 0,                                                       //null
-                                         sq => sq.Rank*10,                                              //pawn
-                                         sq => (DistanceToEdge[sq.Rank]+DistanceToEdge[sq.File])*10-40, //knight
-                                         sq => (DistanceToEdge[sq.Rank]+DistanceToEdge[sq.File])*10-40, //bishop
-                                         sq => (DistanceToEdge[sq.Rank]+DistanceToEdge[sq.File]-3)*5, //rook
-                                         sq => (DistanceToEdge[sq.Rank]+DistanceToEdge[sq.File])*5-10,  //queen
-                                         sq => (DistanceToEdge[sq.Rank]+DistanceToEdge[sq.File])*5  //king
-                                        };
-        static int[] EndgameWeight = { 0, 0, 1, 1, 2, 4, 0 };
-        static int CenterControl(Board board)
-        {
-            ulong whitebitboard = board.GetPieceBitboard(PieceType.Pawn, true) | board.GetPieceBitboard(PieceType.Knight, true);
-            ulong blackbitboard = board.GetPieceBitboard(PieceType.Pawn, false) | board.GetPieceBitboard(PieceType.Knight, false);
-            return BitOperations.PopCount(whitebitboard & 103481868288) - BitOperations.PopCount(blackbitboard & 103481868288) +
-                   BitOperations.PopCount(whitebitboard & 66229406269440) - BitOperations.PopCount(blackbitboard & 66229406269440);
-        }
-        static int Eval(Board board)
-        {
-            if (board.IsDraw()) { return 0; }
-            if (board.IsInCheckmate()) { return 320000 * (board.IsWhiteToMove ? 1 : -1); }
-            PieceList[] pieceList = board.GetAllPieceLists();
-            int material = 0;
-            int psqt_mg = 0;
-            int psqt_eg = 0;
-            int endgamePhase = 0;
-            foreach (PieceList list in pieceList)
-            {
-                material += PieceValue[(int)list.TypeOfPieceInList] * list.Count * (list.IsWhitePieceList ? 1 : -1);
-                endgamePhase += EndgameWeight[(int)list.TypeOfPieceInList] * list.Count;
-            }
-            for (int i = 0; i < 64; i++)
-            {
-                Square sq = new Square(i);
-                Piece p = board.GetPiece(sq);
-                if (!p.IsWhite) sq = new Square(i ^ 56);
-                psqt_mg += (PSQT_mg[(int)p.PieceType](sq)) * (p.IsWhite ? 1 : -1);
-                psqt_eg += (PSQT_eg[(int)p.PieceType](sq)) * (p.IsWhite ? 1 : -1);
-            }
-            return (int)((material +
-                     (float)(psqt_eg * endgamePhase + psqt_mg * (24 - endgamePhase)) / 24
-                     ) * 50 + board.GetLegalMoves().Length + CenterControl(board) * 3) * (board.IsWhiteToMove ? 1 : -1);
-        }
-        static int Max(int a, int b) { return a > b ? a : b; }
-        static int Search(Board board, int depth, int alpha, int beta)
-        {
-            if (depth == 0)
-            {
-                if (board.IsDraw()) { return 0; }
-                if (board.IsInCheckmate()) { return 320000 * (board.IsWhiteToMove ? 1 : -1); }
-                return Eval(board);
-            }
-            Move[] moves = board.GetLegalMoves();
-            List<Move> orderedMoves = OrderMoves(moves);
-            foreach (Move move in orderedMoves)
-            {
+
+                Move move = moves[i];
                 board.MakeMove(move);
-                int CurrEval = -Search(board, depth - 1, -beta, -alpha);
+                int score = -Search(board, timer, -beta, -alpha, depth - 1, ply + 1);
                 board.UndoMove(move);
-                if (CurrEval >= beta)
+
+                // New best move
+                if (score > best)
                 {
-                    return beta;
+                    best = score;
+                    bestMove = move;
+                    if (ply == 0) bestmoveRoot = move;
+
+                    // Improve alpha
+                    alpha = Math.Max(alpha, score);
+
+                    // Fail-high
+                    if (alpha >= beta) break;
+
                 }
-                alpha = Max(alpha, CurrEval);
             }
-            return alpha;
+
+            // (Check/Stale)mate
+            if (!qsearch && moves.Length == 0) return board.IsInCheck() ? -30000 + ply : 0;
+
+            // Did we fail high/low or get an exact score?
+            int bound = best >= beta ? 2 : best > origAlpha ? 3 : 1;
+
+            // Push to TT
+            tt[key % entries] = new TTEntry(key, bestMove, depth, best, bound);
+
+            return best;
         }
+
         public Move Think(Board board, Timer timer)
         {
-            Move[] moves = board.GetLegalMoves();
-            int MaxEval = -320001;
-            Move MaxMove = new Move();
-            int CurrDepth = 1;
-            Random rng = new();
-            int time = timer.MillisecondsRemaining / 50;
-            while (true)
+            nodes = 0;
+
+            // https://www.chessprogramming.org/Iterative_Deepening
+            for (int depth = 1; depth <= 50; depth++)
             {
-                foreach (Move move in moves)
-                {
-                    board.MakeMove(move);
-                    if (board.IsInCheckmate()) return move;
-                    int CurrEval = -Search(board, CurrDepth, -320000, 320000);
-                    if (MaxEval < CurrEval)
-                    {
-                        MaxEval = CurrEval;
-                        MaxMove = move;
-                    }
-                    board.UndoMove(move);
-                }
-                if (timer.MillisecondsElapsedThisTurn > time)
-                {
-                    if (MaxMove != Move.NullMove)
-                        return MaxMove;
-                    else return moves[rng.Next(moves.Length)];
-                }
-                CurrDepth++;
+                int score = Search(board, timer, -30000, 30000, depth, 0);
+
+                // Out of time
+                if (timer.MillisecondsElapsedThisTurn >= timer.MillisecondsRemaining / 2000)
+                    break;
+
+                // Console.WriteLine(String.Format("depth {0} score {1} nodes {2} nps {3} time {4} pv {5}{6}",
+                //     depth,
+                //     score,
+                //     nodes,
+                //     (Int64)(1000 * nodes / (timer.MillisecondsElapsedThisTurn + 1)),
+                //     timer.MillisecondsElapsedThisTurn,
+                //     bestmoveRoot.StartSquare.Name,
+                //     bestmoveRoot.TargetSquare.Name
+                // ));
             }
+            // Console.WriteLine();
+
+            return bestmoveRoot;
         }
     }
 }

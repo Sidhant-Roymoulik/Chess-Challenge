@@ -15,7 +15,10 @@ namespace ChessChallenge.Application
                 int regularFontSize = UIHelper.ScaleInt(35);
                 int headerFontSize = UIHelper.ScaleInt(45);
                 Color col = new(180, 180, 180, 255);
-                Vector2 startPos = UIHelper.Scale(new Vector2(1500, 250));
+                Color white = new(255, 255, 255, 255);
+                Color red = new Color(240, 0, 0, 255);
+                Color green = new Color(0, 0, 240, 255);
+                Vector2 startPos = UIHelper.Scale(new Vector2(1500, 150));
                 float spacingY = UIHelper.Scale(35);
 
                 DrawNextText($"Game {controller.CurrGameNumber} of {controller.TotalGameCount}", headerFontSize, Color.WHITE);
@@ -36,11 +39,15 @@ namespace ChessChallenge.Application
                 void DrawStats(ChallengeController.BotMatchStats stats)
                 {
                     DrawNextText(stats.BotName + ":", nameFontSize, Color.WHITE);
-                    DrawNextText($"Score: +{stats.NumWins} ={stats.NumDraws} -{stats.NumLosses}", regularFontSize, col);
+                    DrawNextText($"Score: +{stats.NumWins} ={stats.NumDraws} -{stats.NumLosses}", regularFontSize, white);
                     DrawNextText($"Num Timeouts: {stats.NumTimeouts}", regularFontSize, col);
                     DrawNextText($"Num Illegal Moves: {stats.NumIllegalMoves}", regularFontSize, col);
-                    DrawNextText($"Winrate: {(float)stats.NumWins / (controller.CurrGameNumber - 1) * 100}%", regularFontSize, col);
+                    DrawNextText($"Winrate: {(float)stats.NumWins / (controller.CurrGameNumber - 1) * 100}%", regularFontSize, green);
+                    DrawNextText($"Draw rate: {(float)stats.NumDraws / (controller.CurrGameNumber - 1) * 100}%", regularFontSize, white);
+                    DrawNextText($"Loss rate: {(float)stats.NumLosses / (controller.CurrGameNumber - 1) * 100}%", regularFontSize, red);
                 }
+                DrawNextText($"Average moves per game: {controller.trueTotalMovesPlayed / controller.CurrGameNumber - 1}", regularFontSize, white);
+
 
                 void DrawNextText(string text, int fontSize, Color col)
                 {
