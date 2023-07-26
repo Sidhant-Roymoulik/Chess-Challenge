@@ -13,21 +13,6 @@ public class MyBot : IChessBot
     Move depth_move = new Move();
     Int64 nodes = 0;
 
-    struct Entry
-    {
-        public ulong key;
-        public int score, depth;
-        public Entry(ulong _key, int _score, int _depth)
-        {
-            key = _key;
-            score = _score;
-            depth = _depth;
-        }
-    }
-
-    const int TT_ENTRIES = 1 << 20;
-    Entry[] tt = new Entry[TT_ENTRIES];
-
     public Move Think(Board board_input, Timer timer_input)
     {
         board = board_input;
@@ -53,20 +38,20 @@ public class MyBot : IChessBot
 
             best_move = depth_move;
 
-            Console.WriteLine(String.Format("depth {0} score {1} nodes {2} nps {3} time {4} pv {5}{6}",
-                depth,
-                score,
-                nodes,
-                (Int64)(1000 * nodes / (timer.MillisecondsElapsedThisTurn + 1)),
-                timer.MillisecondsElapsedThisTurn,
-                best_move.StartSquare.Name,
-                best_move.TargetSquare.Name
-            ));
+            // Console.WriteLine(String.Format("depth {0} score {1} nodes {2} nps {3} time {4} pv {5}{6}",
+            //     depth,
+            //     score,
+            //     nodes,
+            //     (Int64)(1000 * nodes / (timer.MillisecondsElapsedThisTurn + 1)),
+            //     timer.MillisecondsElapsedThisTurn,
+            //     best_move.StartSquare.Name,
+            //     best_move.TargetSquare.Name
+            // ));
 
             if (score > CHECKMATE / 2)
                 break;
         }
-        Console.WriteLine();
+        // Console.WriteLine();
 
         return best_move;
     }
@@ -82,10 +67,6 @@ public class MyBot : IChessBot
         if (!root && board.IsRepeatedPosition()) return 0;
         if (depth <= 0) return Q_Search(ply, 0, alpha, beta);
 
-        Entry tt_entry = tt[key % TT_ENTRIES];
-        if (!root && tt_entry.key == key && tt_entry.depth >= depth)
-            return tt_entry.score;
-
         Move[] moves = board.GetLegalMoves();
         foreach (Move move in moves)
         {
@@ -95,16 +76,13 @@ public class MyBot : IChessBot
 
             if (new_score > alpha)
             {
-                if (ply == 0) depth_move = move;
+                if (root) depth_move = move;
                 if (new_score >= beta) return beta;
                 alpha = Math.Max(alpha, new_score);
             }
         }
 
         if (moves.Length == 0) { return board.IsInCheck() ? -CHECKMATE + ply : 0; }
-
-        if (tt_entry.key != key || tt_entry.depth < depth)
-            tt[key % TT_ENTRIES] = new Entry(key, alpha, depth);
 
         return alpha;
     }
