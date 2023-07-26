@@ -5,7 +5,6 @@ namespace ChessChallenge.Example
 {
     public class EvilBot : IChessBot
     {
-        // Piece values: null, pawn, knight, bishop, rook, queen, king
         int CHECKMATE = 100000;
         Board board;
         Timer timer;
@@ -72,7 +71,7 @@ namespace ChessChallenge.Example
             {
                 int eval = Eval();
                 if (eval >= beta) return beta;
-                // if (eval < alpha - 1025) return alpha;
+                if (eval < alpha - 1025) return alpha;
                 if (eval > alpha) alpha = eval;
             }
 

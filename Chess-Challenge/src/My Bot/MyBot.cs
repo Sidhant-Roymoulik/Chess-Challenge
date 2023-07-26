@@ -13,10 +13,26 @@ public class MyBot : IChessBot
     Move depth_move = new Move();
     Int64 nodes = 0;
 
-    public Move Think(Board board_input, Timer timer_input)
+    int ALPHA_FLAG = 0, EXACT_FLAG = 1, BETA_FLAG = 2;
+    struct Entry
     {
-        board = board_input;
-        timer = timer_input;
+        public ulong key;
+        public int score, depth, flag;
+        public Entry(ulong _key, int _score, int _depth, int _flag)
+        {
+            key = _key;
+            score = _score;
+            depth = _depth;
+            flag = _flag;
+        }
+    }
+    const int TT_ENTRIES = 1 << 20;
+    Entry[] tt = new Entry[TT_ENTRIES];
+
+    public Move Think(Board _board, Timer _timer)
+    {
+        board = _board;
+        timer = _timer;
         return Iterative_Deepening();
     }
 
@@ -62,20 +78,31 @@ public class MyBot : IChessBot
 
         bool root = ply == 0;
         bool q_search = depth <= 0;
+        int best_score = -CHECKMATE;
         ulong key = board.ZobristKey;
 
         if (timer.MillisecondsElapsedThisTurn > time_limit) return 0;
         if (!root && board.IsRepeatedPosition()) return -20;
 
+        Entry tt_entry = tt[key % TT_ENTRIES];
+        if (!root && tt_entry.key == key && tt_entry.depth >= depth && (
+                (tt_entry.flag == ALPHA_FLAG && tt_entry.score <= alpha) ||
+                tt_entry.flag == EXACT_FLAG ||
+                (tt_entry.flag == BETA_FLAG && tt_entry.score >= beta)
+            )
+        )
+            return tt_entry.score;
+
         // Delta Pruning
         if (q_search)
         {
-            int eval = Eval();
-            if (eval >= beta) return beta;
-            if (eval < alpha - 1025) return alpha;
-            if (eval > alpha) alpha = eval;
+            best_score = Eval();
+            if (best_score >= beta) return beta;
+            if (best_score < alpha - 1025) return alpha;
+            alpha = Math.Max(alpha, best_score);
         }
 
+        int start_alpha = alpha;
         Move[] moves = board.GetLegalMoves(q_search);
         foreach (Move move in moves)
         {
@@ -83,17 +110,21 @@ public class MyBot : IChessBot
             int new_score = -Negamax(depth - 1, ply + 1, -beta, -alpha);
             board.UndoMove(move);
 
-            if (new_score > alpha)
+            if (new_score > best_score)
             {
+                best_score = new_score;
                 if (root) depth_move = move;
-                if (new_score >= beta) return beta;
-                alpha = Math.Max(alpha, new_score);
+                alpha = Math.Max(alpha, best_score);
+                if (alpha >= beta) break;
             }
         }
 
         if (!q_search && moves.Length == 0) { return board.IsInCheck() ? -CHECKMATE + ply : 0; }
 
-        return alpha;
+        int flag = best_score >= beta ? BETA_FLAG : best_score > start_alpha ? EXACT_FLAG : ALPHA_FLAG;
+        tt[key % TT_ENTRIES] = new Entry(key, best_score, depth, flag);
+
+        return best_score;
     }
 
     // PeSTO Evaluation Function
@@ -116,16 +147,16 @@ public class MyBot : IChessBot
         int[] score_eg = { 0, 0 };
         int phase = 0;
 
-        foreach (bool side in new[] { false, true })
+        for (int side = 0; side < 2; side++)
         {
             for (int piece_type = 1; piece_type <= 6; piece_type++)
             {
-                ulong bb = board.GetPieceBitboard((PieceType)piece_type, side);
+                ulong bb = board.GetPieceBitboard((PieceType)piece_type, side == 1);
                 while (bb > 0)
                 {
-                    int index = 128 * (piece_type - 1) + BitboardHelper.ClearAndGetIndexOfLSB(ref bb) ^ (side ? 56 : 0);
-                    score_mg[Convert.ToInt32(side)] += pvm_mg[piece_type] + Get_Pst_Bonus(index);
-                    score_eg[Convert.ToInt32(side)] += pvm_eg[piece_type] + Get_Pst_Bonus(index + 64);
+                    int index = 128 * (piece_type - 1) + BitboardHelper.ClearAndGetIndexOfLSB(ref bb) ^ (side == 1 ? 56 : 0);
+                    score_mg[side] += pvm_mg[piece_type] + Get_Pst_Bonus(index);
+                    score_eg[side] += pvm_eg[piece_type] + Get_Pst_Bonus(index + 64);
                     phase += phase_weight[piece_type];
                 }
             }
