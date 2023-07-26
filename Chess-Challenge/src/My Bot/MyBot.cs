@@ -65,13 +65,14 @@ public class MyBot : IChessBot
         ulong key = board.ZobristKey;
 
         if (timer.MillisecondsElapsedThisTurn > time_limit) return 0;
-        if (!root && board.IsRepeatedPosition()) return 0;
+        if (!root && board.IsRepeatedPosition()) return -20;
 
         // Delta Pruning
         if (q_search)
         {
             int eval = Eval();
             if (eval >= beta) return beta;
+            if (eval < alpha - 1025) return alpha;
             if (eval > alpha) alpha = eval;
         }
 
