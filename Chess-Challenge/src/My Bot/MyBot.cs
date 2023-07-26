@@ -130,6 +130,8 @@ public class MyBot : IChessBot
             }
         }
 
+        score_mg[turn] += 14;
+
         // In case of premature promotion
         phase = Math.Min(phase, 24);
 
