@@ -23,9 +23,10 @@ namespace ChessChallenge.Example
         {
             public ulong key;
             public int score, depth, flag;
-            public Entry(ulong _key, int _score, int _depth, int _flag)
+            public Move move;
+            public Entry(ulong _key, int _score, int _depth, int _flag, Move _move)
             {
-                key = _key; score = _score; depth = _depth; flag = _flag;
+                key = _key; score = _score; depth = _depth; flag = _flag; move = _move;
             }
         }
         // TT Definition
@@ -37,14 +38,13 @@ namespace ChessChallenge.Example
         {
             board = _board;
             timer = _timer;
+            nodes = 0;
+            time_limit = timer.MillisecondsRemaining / 2000;
             return Iterative_Deepening();
         }
 
         public Move Iterative_Deepening()
         {
-            nodes = 0;
-            time_limit = timer.MillisecondsRemaining / 2000;
-
             Move[] moves = board.GetLegalMoves();
             Move best_move = moves[0];
 
@@ -61,21 +61,21 @@ namespace ChessChallenge.Example
                 best_move = depth_move;
 
                 // UCI Debug Logging
-                // Console.WriteLine(String.Format("depth {0} score {1} nodes {2} nps {3} time {4} pv {5}{6}",
-                //     depth,
-                //     score,
-                //     nodes,
-                //     (Int64)(1000 * nodes / (timer.MillisecondsElapsedThisTurn + 1)),
-                //     timer.MillisecondsElapsedThisTurn,
-                //     best_move.StartSquare.Name,
-                //     best_move.TargetSquare.Name
-                // ));
+                Console.WriteLine(String.Format("depth {0} score {1} nodes {2} nps {3} time {4} pv {5}{6}",
+                    depth,
+                    score,
+                    nodes,
+                    (Int64)(1000 * nodes / (timer.MillisecondsElapsedThisTurn + 1)),
+                    timer.MillisecondsElapsedThisTurn,
+                    best_move.StartSquare.Name,
+                    best_move.TargetSquare.Name
+                ));
 
                 // If a checkmate is found, exit search early to save time
                 if (score > CHECKMATE / 2)
                     break;
             }
-            // Console.WriteLine();
+            Console.WriteLine();
 
             return best_move;
         }
@@ -90,6 +90,7 @@ namespace ChessChallenge.Example
             bool q_search = depth <= 0;
             int best_score = -CHECKMATE;
             ulong key = board.ZobristKey;
+            Move tt_move = Move.NullMove;
 
             // Check if time is expired
             if (timer.MillisecondsElapsedThisTurn > time_limit) return 0;
@@ -98,13 +99,17 @@ namespace ChessChallenge.Example
 
             // TT Pruning
             Entry tt_entry = tt[key % TT_ENTRIES];
-            if (!root && tt_entry.key == key && tt_entry.depth >= depth && (
-                    (tt_entry.flag == ALPHA_FLAG && tt_entry.score <= alpha) ||
-                    tt_entry.flag == EXACT_FLAG ||
-                    (tt_entry.flag == BETA_FLAG && tt_entry.score >= beta)
+            if (tt_entry.key == key)
+            {
+                tt_move = tt_entry.move;
+                if (!root && tt_entry.depth >= depth && (
+                        (tt_entry.flag == ALPHA_FLAG && tt_entry.score <= alpha) ||
+                        tt_entry.flag == EXACT_FLAG ||
+                        (tt_entry.flag == BETA_FLAG && tt_entry.score >= beta)
+                    )
                 )
-            )
-                return tt_entry.score;
+                    return tt_entry.score;
+            }
 
             // Delta Pruning
             if (q_search)
@@ -115,9 +120,15 @@ namespace ChessChallenge.Example
                 alpha = Math.Max(alpha, best_score);
             }
 
-            int start_alpha = alpha;
             Move[] moves = board.GetLegalMoves(q_search);
-            foreach (Move move in moves)
+
+            // Move Ordering
+            List<Tuple<Move, int>> scored_moves = new();
+            foreach (Move move in moves) scored_moves.Add(new Tuple<Move, int>(move, score_move(move, tt_move)));
+            scored_moves.Sort((a, b) => b.Item2.CompareTo(a.Item2));
+
+            int start_alpha = alpha;
+            foreach (var (move, _) in scored_moves)
             {
                 board.MakeMove(move);
                 int new_score = -Negamax(depth - 1, ply + 1, -beta, -alpha);
@@ -130,6 +141,7 @@ namespace ChessChallenge.Example
 
                     // Update bestmove
                     if (root) depth_move = move;
+                    tt_move = move;
                     // Beta Cutoff
                     if (alpha >= beta) break;
                 }
@@ -141,7 +153,7 @@ namespace ChessChallenge.Example
             // Determine type of node cutoff
             int flag = best_score >= beta ? BETA_FLAG : best_score > start_alpha ? EXACT_FLAG : ALPHA_FLAG;
             // Save position to transposition table
-            tt[key % TT_ENTRIES] = new Entry(key, best_score, depth, flag);
+            tt[key % TT_ENTRIES] = new Entry(key, best_score, depth, flag, tt_move);
 
             return best_score;
         }
@@ -198,6 +210,18 @@ namespace ChessChallenge.Example
 
             // Tapered evaluation
             return ((score_mg[turn] - score_mg[turn ^ 1]) * phase + (score_eg[turn] - score_eg[turn ^ 1]) * (24 - phase)) / 24;
+        }
+
+        // Score moves using TT and MVV-LVA
+        public int score_move(Move move, Move tt_move)
+        {
+            // TT-Move
+            if (move == tt_move)
+                return 100;
+            // MVV-LVA
+            if (move.IsCapture)
+                return 10 * ((int)move.CapturePieceType) - (int)move.MovePieceType;
+            return 0;
         }
     }
 }

@@ -11,7 +11,7 @@ public class MyBot : IChessBot
     Board board;
     Timer timer;
     int time_limit = 0;
-    Move depth_move = new Move();
+    Move depth_move = Move.NullMove;
     Int64 nodes = 0;
 
     // Types of Nodes
@@ -28,7 +28,7 @@ public class MyBot : IChessBot
         }
     }
     // TT Definition
-    const int TT_ENTRIES = 1 << 20;
+    const ulong TT_ENTRIES = 0x8FFFFF;
     Entry[] tt = new Entry[TT_ENTRIES];
 
     // Required Think Method
@@ -43,13 +43,11 @@ public class MyBot : IChessBot
 
     public Move Iterative_Deepening()
     {
-        Move[] moves = board.GetLegalMoves();
-        Move best_move = moves[0];
+        Move best_move = Move.NullMove;
 
         // Iterative Deepening Loop
         for (int depth = 1; depth < 100; depth++)
         {
-            depth_move = moves[0];
             int score = Negamax(depth, 0, -CHECKMATE, CHECKMATE);
 
             // Check if time is expired
@@ -121,13 +119,19 @@ public class MyBot : IChessBot
         Move[] moves = board.GetLegalMoves(q_search);
 
         // Move Ordering
-        List<Tuple<Move, int>> scored_moves = new();
-        foreach (Move move in moves) scored_moves.Add(new Tuple<Move, int>(move, score_move(move, tt_move)));
-        scored_moves.Sort((a, b) => b.Item2.CompareTo(a.Item2));
+        (Move, int)[] scored_moves = new (Move, int)[moves.Length];
+        for (int i = 0; i < moves.Length; i++)
+            scored_moves[i] = (moves[i], score_move(moves[i], tt_move));
 
         int start_alpha = alpha;
-        foreach (var (move, _) in scored_moves)
+        for (int i = 0; i < moves.Length; i++)
         {
+            // Sort moves in one-iteration bubble sort
+            for (int j = i + 1; j < moves.Length; j++)
+                if (scored_moves[i].Item2 < scored_moves[j].Item2)
+                    (scored_moves[i], scored_moves[j]) = (scored_moves[j], scored_moves[i]);
+
+            Move move = scored_moves[i].Item1;
             board.MakeMove(move);
             int new_score = -Negamax(depth - 1, ply + 1, -beta, -alpha);
             board.UndoMove(move);
@@ -135,11 +139,12 @@ public class MyBot : IChessBot
             if (new_score > best_score)
             {
                 best_score = new_score;
-                alpha = Math.Max(alpha, best_score);
+                tt_move = move;
 
                 // Update bestmove
                 if (root) depth_move = move;
-                tt_move = move;
+                // Improve alpha
+                alpha = Math.Max(alpha, best_score);
                 // Beta Cutoff
                 if (alpha >= beta) break;
             }
