@@ -13,7 +13,7 @@ namespace ChessChallenge.Example
         Board board;
         Timer timer;
         int time_limit = 0;
-        Move depth_move = new Move();
+        Move depth_move = Move.NullMove;
         Int64 nodes = 0;
 
         // Types of Nodes
@@ -30,7 +30,7 @@ namespace ChessChallenge.Example
             }
         }
         // TT Definition
-        const int TT_ENTRIES = 1 << 20;
+        const ulong TT_ENTRIES = 0x8FFFFF;
         Entry[] tt = new Entry[TT_ENTRIES];
 
         // Required Think Method
@@ -45,13 +45,11 @@ namespace ChessChallenge.Example
 
         public Move Iterative_Deepening()
         {
-            Move[] moves = board.GetLegalMoves();
-            Move best_move = moves[0];
+            Move best_move = Move.NullMove;
 
             // Iterative Deepening Loop
             for (int depth = 1; depth < 100; depth++)
             {
-                depth_move = moves[0];
                 int score = Negamax(depth, 0, -CHECKMATE, CHECKMATE);
 
                 // Check if time is expired
@@ -61,21 +59,21 @@ namespace ChessChallenge.Example
                 best_move = depth_move;
 
                 // UCI Debug Logging
-                Console.WriteLine(String.Format("depth {0} score {1} nodes {2} nps {3} time {4} pv {5}{6}",
-                    depth,
-                    score,
-                    nodes,
-                    (Int64)(1000 * nodes / (timer.MillisecondsElapsedThisTurn + 1)),
-                    timer.MillisecondsElapsedThisTurn,
-                    best_move.StartSquare.Name,
-                    best_move.TargetSquare.Name
-                ));
+                // Console.WriteLine(String.Format("depth {0} score {1} nodes {2} nps {3} time {4} pv {5}{6}",
+                //     depth,
+                //     score,
+                //     nodes,
+                //     (Int64)(1000 * nodes / (timer.MillisecondsElapsedThisTurn + 1)),
+                //     timer.MillisecondsElapsedThisTurn,
+                //     best_move.StartSquare.Name,
+                //     best_move.TargetSquare.Name
+                // ));
 
                 // If a checkmate is found, exit search early to save time
                 if (score > CHECKMATE / 2)
                     break;
             }
-            Console.WriteLine();
+            // Console.WriteLine();
 
             return best_move;
         }
@@ -123,13 +121,19 @@ namespace ChessChallenge.Example
             Move[] moves = board.GetLegalMoves(q_search);
 
             // Move Ordering
-            List<Tuple<Move, int>> scored_moves = new();
-            foreach (Move move in moves) scored_moves.Add(new Tuple<Move, int>(move, score_move(move, tt_move)));
-            scored_moves.Sort((a, b) => b.Item2.CompareTo(a.Item2));
+            (Move, int)[] scored_moves = new (Move, int)[moves.Length];
+            for (int i = 0; i < moves.Length; i++)
+                scored_moves[i] = (moves[i], score_move(moves[i], tt_move));
 
             int start_alpha = alpha;
-            foreach (var (move, _) in scored_moves)
+            for (int i = 0; i < moves.Length; i++)
             {
+                // Sort moves in one-iteration bubble sort
+                for (int j = i + 1; j < moves.Length; j++)
+                    if (scored_moves[i].Item2 < scored_moves[j].Item2)
+                        (scored_moves[i], scored_moves[j]) = (scored_moves[j], scored_moves[i]);
+
+                Move move = scored_moves[i].Item1;
                 board.MakeMove(move);
                 int new_score = -Negamax(depth - 1, ply + 1, -beta, -alpha);
                 board.UndoMove(move);
@@ -137,11 +141,12 @@ namespace ChessChallenge.Example
                 if (new_score > best_score)
                 {
                     best_score = new_score;
-                    alpha = Math.Max(alpha, best_score);
+                    tt_move = move;
 
                     // Update bestmove
                     if (root) depth_move = move;
-                    tt_move = move;
+                    // Improve alpha
+                    alpha = Math.Max(alpha, best_score);
                     // Beta Cutoff
                     if (alpha >= beta) break;
                 }
