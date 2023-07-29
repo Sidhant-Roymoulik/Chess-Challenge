@@ -1,4 +1,9 @@
-﻿using ChessChallenge.API;
+﻿// #define UCI
+
+#define TESTING
+// #define SLOW
+
+using ChessChallenge.API;
 using System;
 using System.Linq;
 using System.Numerics;
@@ -7,26 +12,20 @@ using System.Collections.Generic;
 public class MyBot : IChessBot
 {
     // Define globals to save tokens
-    int CHECKMATE = 100000;
+    readonly int CHECKMATE = 100000;
     Board board;
     Timer timer;
-    int time_limit = 0;
-    Move depth_move = Move.NullMove;
-    Int64 nodes = 0;
+    int time_limit;
+    Move depth_move;
+
+#if UCI
+    long nodes;
+#endif
 
     // Types of Nodes
-    int ALPHA_FLAG = 0, EXACT_FLAG = 1, BETA_FLAG = 2;
+    readonly int ALPHA_FLAG = 0, EXACT_FLAG = 1, BETA_FLAG = 2;
     // TT Entry Definition
-    struct Entry
-    {
-        public ulong key;
-        public int score, depth, flag;
-        public Move move;
-        public Entry(ulong _key, int _score, int _depth, int _flag, Move _move)
-        {
-            key = _key; score = _score; depth = _depth; flag = _flag; move = _move;
-        }
-    }
+    record struct Entry(ulong Key, int Score, int Depth, int Flag, Move Move);
     // TT Definition
     const ulong TT_ENTRIES = 0x8FFFFF;
     Entry[] tt;
@@ -58,15 +57,17 @@ public class MyBot : IChessBot
     {
         board = _board;
         timer = _timer;
-        nodes = 0;
+        time_limit = timer.MillisecondsRemaining / 40;
+#if SLOW
+        time_limit = timer.MillisecondsRemaining / 2;
+#endif
+#if TESTING
         time_limit = timer.MillisecondsRemaining / 2000;
-        return Iterative_Deepening();
-    }
-
-    public Move Iterative_Deepening()
-    {
+#endif
+#if UCI
+        nodes = 0;
+#endif
         Move best_move = Move.NullMove;
-
         // Iterative Deepening Loop
         for (int depth = 1; depth < 100; depth++)
         {
@@ -77,23 +78,26 @@ public class MyBot : IChessBot
                 break;
 
             best_move = depth_move;
-
+#if UCI
             // UCI Debug Logging
-            // Console.WriteLine(String.Format("depth {0} score {1} nodes {2} nps {3} time {4} pv {5}{6}",
-            //     depth,
-            //     score,
-            //     nodes,
-            //     (Int64)(1000 * nodes / (timer.MillisecondsElapsedThisTurn + 1)),
-            //     timer.MillisecondsElapsedThisTurn,
-            //     best_move.StartSquare.Name,
-            //     best_move.TargetSquare.Name
-            // ));
+            Console.WriteLine("depth {0,2} score {1,6} nodes {2,9} nps {3,8} time {4,5} pv {5}{6}",
+                depth,
+                score,
+                nodes,
+                1000 * nodes / (timer.MillisecondsElapsedThisTurn + 1),
+                timer.MillisecondsElapsedThisTurn,
+                best_move.StartSquare.Name,
+                best_move.TargetSquare.Name
+            );
+#endif
 
             // If a checkmate is found, exit search early to save time
             if (score > CHECKMATE / 2)
                 break;
         }
-        // Console.WriteLine();
+#if UCI
+        Console.WriteLine();
+#endif
 
         return best_move;
     }
@@ -101,33 +105,25 @@ public class MyBot : IChessBot
     public int Negamax(int depth, int ply, int alpha, int beta)
     {
         // Increment node counter
+#if UCI
         nodes++;
-
+#endif
         // Define search variables
         bool root = ply == 0;
         bool q_search = depth <= 0;
         int best_score = -CHECKMATE;
         ulong key = board.ZobristKey;
-        Move tt_move = Move.NullMove;
 
-        // Check if time is expired
-        if (timer.MillisecondsElapsedThisTurn > time_limit) return 0;
         // Check for draw by repetition
         if (!root && board.IsRepeatedPosition()) return -20;
 
         // TT Pruning
         Entry tt_entry = tt[key % TT_ENTRIES];
-        if (tt_entry.key == key)
-        {
-            tt_move = tt_entry.move;
-            if (!root && tt_entry.depth >= depth && (
-                    (tt_entry.flag == ALPHA_FLAG && tt_entry.score <= alpha) ||
-                    tt_entry.flag == EXACT_FLAG ||
-                    (tt_entry.flag == BETA_FLAG && tt_entry.score >= beta)
-                )
-            )
-                return tt_entry.score;
-        }
+        if (tt_entry.Key == key && !root && tt_entry.Depth >= depth && (
+                tt_entry.Flag == EXACT_FLAG ||
+                (tt_entry.Flag == ALPHA_FLAG && tt_entry.Score <= alpha) ||
+                (tt_entry.Flag == BETA_FLAG && tt_entry.Score >= beta)))
+            return tt_entry.Score;
 
         // Delta Pruning
         if (q_search)
@@ -141,27 +137,48 @@ public class MyBot : IChessBot
         Move[] moves = board.GetLegalMoves(q_search);
 
         // Move Ordering
-        (Move, int)[] scored_moves = new (Move, int)[moves.Length];
+        int[] move_scores = new int[moves.Length];
         for (int i = 0; i < moves.Length; i++)
-            scored_moves[i] = (moves[i], Score_Move(moves[i], tt_move));
+        {
+            // TT-Move
+            if (moves[i] == tt_entry.Move) move_scores[i] = 100;
+            // MVV-LVA
+            else if (moves[i].IsCapture) move_scores[i] = 10 * (int)moves[i].CapturePieceType - (int)moves[i].MovePieceType;
+        }
 
+        Move best_move = Move.NullMove;
         int start_alpha = alpha;
         for (int i = 0; i < moves.Length; i++)
         {
+            // Check if time is expired
+            if (timer.MillisecondsElapsedThisTurn > time_limit) return 0;
+
             // Sort moves in one-iteration bubble sort
             for (int j = i + 1; j < moves.Length; j++)
-                if (scored_moves[i].Item2 < scored_moves[j].Item2)
-                    (scored_moves[i], scored_moves[j]) = (scored_moves[j], scored_moves[i]);
+                if (move_scores[i] < move_scores[j])
+                    (moves[i], moves[j], move_scores[i], move_scores[j]) =
+                    (moves[j], moves[i], move_scores[j], move_scores[i]);
 
-            Move move = scored_moves[i].Item1;
+            Move move = moves[i];
             board.MakeMove(move);
-            int new_score = -Negamax(depth - 1, ply + 1, -beta, -alpha);
+            int new_score;
+            // if (i == 0 || q_search)
+            //     // Principal-variation search
+            new_score = -Negamax(depth - 1, ply + 1, -beta, -alpha);
+            // else
+            // {
+            //     // Null-window search
+            //     new_score = -Negamax(depth - 1, ply + 1, -alpha - 1, -alpha);
+            //     if (new_score > alpha)
+            //         // Principal-variation search
+            //         new_score = -Negamax(depth - 1, ply + 1, -beta, -new_score);
+            // }
             board.UndoMove(move);
 
             if (new_score > best_score)
             {
                 best_score = new_score;
-                tt_move = move;
+                best_move = move;
 
                 // Update bestmove
                 if (root) depth_move = move;
@@ -178,21 +195,20 @@ public class MyBot : IChessBot
         // Determine type of node cutoff
         int flag = best_score >= beta ? BETA_FLAG : best_score > start_alpha ? EXACT_FLAG : ALPHA_FLAG;
         // Save position to transposition table
-        tt[key % TT_ENTRIES] = new Entry(key, best_score, depth, flag, tt_move);
+        // if (tt_entry.Depth < depth)
+        tt[key % TT_ENTRIES] = new Entry(key, best_score, depth, flag, best_move);
 
         return best_score;
     }
 
     // PeSTO Evaluation Function
-    readonly int[] pvm_mg = { 82, 337, 365, 477, 1025, 20000 };
-    readonly int[] pvm_eg = { 94, 281, 297, 512, 936, 20000 };
+    readonly int[] pvm_mg = { 100, 310, 330, 500, 1000, 10000 };
+    readonly int[] pvm_eg = { 100, 310, 330, 500, 1000, 10000 };
     readonly int[] phase_weight = { 0, 1, 1, 2, 4, 0 };
-
     public int Eval()
     {
         // Define evaluation variables
         int mg = 0, eg = 0, phase = 0;
-
         // Iterate through both players
         foreach (bool stm in new[] { true, false })
         {
@@ -222,17 +238,5 @@ public class MyBot : IChessBot
         phase = Math.Min(phase, 24);
         // Tapered evaluation
         return (mg * phase + eg * (24 - phase)) / 24 * (board.IsWhiteToMove ? 1 : -1);
-    }
-
-    // Score moves using TT and MVV-LVA
-    public int Score_Move(Move move, Move tt_move)
-    {
-        // TT-Move
-        if (move == tt_move)
-            return 100;
-        // MVV-LVA
-        if (move.IsCapture)
-            return 10 * (int)move.CapturePieceType - (int)move.MovePieceType;
-        return 0;
     }
 }
