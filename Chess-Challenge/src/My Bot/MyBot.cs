@@ -8,6 +8,7 @@ using System;
 using System.Linq;
 using System.Numerics;
 using System.Collections.Generic;
+using System.Dynamic;
 
 public class MyBot : IChessBot
 {
@@ -80,7 +81,7 @@ public class MyBot : IChessBot
         return best_move;
     }
 
-    public int Negamax(int depth, int ply, int alpha, int beta)
+    private int Negamax(int depth, int ply, int alpha, int beta)
     {
         // Increment node counter
 #if UCI
@@ -111,9 +112,7 @@ public class MyBot : IChessBot
             alpha = Math.Max(alpha, best_score);
         }
 
-        Move[] moves;
-        if (board.IsInCheck()) moves = board.GetLegalMoves();
-        else moves = board.GetLegalMoves(q_search);
+        Move[] moves = board.GetLegalMoves(q_search && !board.IsInCheck());
         // Move Ordering
         int[] move_scores = new int[moves.Length];
         for (int i = 0; i < moves.Length; i++)
@@ -139,18 +138,10 @@ public class MyBot : IChessBot
 
             Move move = moves[i];
             board.MakeMove(move);
-            int new_score;
-            if (i == 0 || q_search)
-                // Principal-variation search
-                new_score = -Negamax(depth - 1, ply + 1, -beta, -alpha);
-            else
-            {
-                // Null-window search
-                new_score = -Negamax(depth - 1, ply + 1, -alpha - 1, -alpha);
-                if (new_score > alpha)
-                    // Principal-variation search
-                    new_score = -Negamax(depth - 1, ply + 1, -beta, -new_score);
-            }
+            // Principal variation search with null-window search
+            int new_score = -Negamax(depth - 1, ply + 1, (q_search || i == 0) ? -beta : -alpha - 1, -alpha);
+            if (!q_search && i != 0 && new_score > alpha)
+                new_score = -Negamax(depth - 1, ply + 1, -beta, -new_score);
             board.UndoMove(move);
 
             if (new_score > best_score)
@@ -182,8 +173,8 @@ public class MyBot : IChessBot
     readonly int[] phase_weight = { 0, 1, 1, 2, 4, 0 };
     // thanks for the compressed pst implementation Tyrant
     // None, Pawn, Knight, Bishop, Rook, Queen, King 
-    private readonly short[] PieceValues = { 82, 337, 365, 477, 1025, 20000, // Middlegame
-                                             94, 281, 297, 512, 936, 20000}; // Endgame
+    private readonly short[] pvm = { 82, 337, 365, 477, 1025, 20000, // Middlegame
+                                     94, 281, 297, 512, 936, 20000}; // Endgame
     // Big table packed with data from premade piece square tables
     // Unpack using PackedEvaluationTables[set, rank] = file
     private readonly decimal[] PackedPestoTables = {
@@ -202,7 +193,7 @@ public class MyBot : IChessBot
     // TODO: King Safety
     // TODO: Pawn Structure
     // TODO: Mobility
-    public int Eval()
+    private int Eval()
     {
         // Define evaluation variables
         int mg = 0, eg = 0, phase = 0;
@@ -245,7 +236,7 @@ public class MyBot : IChessBot
             int pieceType = 0;
             UnpackedPestoTables[i] = decimal.GetBits(PackedPestoTables[i]).Take(3)
                 .SelectMany(c => BitConverter.GetBytes(c)
-                    .Select((byte square) => (int)((sbyte)square * 1.461) + PieceValues[pieceType++]))
+                    .Select((byte square) => (int)((sbyte)square * 1.461) + pvm[pieceType++]))
                 .ToArray();
         }
     }
