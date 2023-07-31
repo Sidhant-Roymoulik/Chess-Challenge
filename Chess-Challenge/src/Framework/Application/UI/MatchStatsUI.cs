@@ -29,9 +29,12 @@ namespace ChessChallenge.Application
 
                 string eloDifference = CalculateElo(controller.BotStatsA.NumWins, controller.BotStatsA.NumDraws, controller.BotStatsA.NumLosses);
                 string errorMargin = CalculateErrorMargin(controller.BotStatsA.NumWins, controller.BotStatsA.NumDraws, controller.BotStatsA.NumLosses);
+                string los = $"{Los(controller.BotStatsA.NumWins, controller.BotStatsA.NumLosses)}";
 
                 DrawNextText($"Elo Difference:", headerFontSize, Color.WHITE);
                 DrawNextText($"{eloDifference} {errorMargin}", regularFontSize, Color.GRAY);
+                DrawNextText($"LOS:", headerFontSize, Color.WHITE);
+                DrawNextText($"{los}%", regularFontSize, Color.GRAY);
 
                 void DrawStats(ChallengeController.BotMatchStats stats)
                 {
@@ -39,7 +42,7 @@ namespace ChessChallenge.Application
                     DrawNextText($"Score: +{stats.NumWins} ={stats.NumDraws} -{stats.NumLosses}", regularFontSize, col);
                     DrawNextText($"Num Timeouts: {stats.NumTimeouts}", regularFontSize, col);
                     DrawNextText($"Num Illegal Moves: {stats.NumIllegalMoves}", regularFontSize, col);
-                    DrawNextText($"Winrate: {(float)stats.NumWins / (controller.CurrGameNumber - 1) * 100}%", regularFontSize, col);
+                    DrawNextText($"Winrate: {Math.Round((float)stats.NumWins / (controller.CurrGameNumber - 1) * 100, 1)}%", regularFontSize, col);
                 }
 
                 void DrawNextText(string text, int fontSize, Color col)
@@ -52,7 +55,7 @@ namespace ChessChallenge.Application
 
         private static string CalculateElo(int wins, int draws, int losses)
         {
-            double score = wins + draws / 2;
+            double score = wins + draws / 2.0;
             int totalGames = wins + draws + losses;
             double difference = CalculateEloDifference(score / totalGames);
             if ((int)difference == -2147483648)
@@ -66,7 +69,7 @@ namespace ChessChallenge.Application
 
         private static double CalculateEloDifference(double percentage)
         {
-            return -400 * Math.Log(1 / percentage - 1) / 2.302;
+            return -400 * Math.Log(1.0 / percentage - 1.0) / Math.Log(10.0);
         }
 
         private static string CalculateErrorMargin(int wins, int draws, int losses)
@@ -109,6 +112,34 @@ namespace ChessChallenge.Application
             double ret = Math.Sqrt(Math.Sqrt(z * z - y / a) - z);
             if (x < 0) return -ret;
             return ret;
+        }
+
+        private static double Los(int wins, int losses)
+        {
+            return Math.Round(50.0 * (1 + Erf((wins - losses) / Math.Sqrt(2.0 * (wins + losses)))), 1);
+        }
+
+        static double Erf(double x)
+        {
+            // constants
+            double a1 = 0.254829592;
+            double a2 = -0.284496736;
+            double a3 = 1.421413741;
+            double a4 = -1.453152027;
+            double a5 = 1.061405429;
+            double p = 0.3275911;
+
+            // Save the sign of x
+            int sign = 1;
+            if (x < 0)
+                sign = -1;
+            x = Math.Abs(x);
+
+            // A&S formula 7.1.26
+            double t = 1.0 / (1.0 + p * x);
+            double y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.Exp(-x * x);
+
+            return sign * y;
         }
     }
 }
