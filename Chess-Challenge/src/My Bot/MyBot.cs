@@ -137,10 +137,10 @@ public class MyBot : IChessBot
         int[] move_scores = new int[moves.Length];
         for (int i = 0; i < moves.Length; i++)
         {
-            // TT-Move
-            if (moves[i] == tt_entry.Move) move_scores[i] = 100;
-            // MVV-LVA
-            else if (moves[i].IsCapture) move_scores[i] = 10 * (int)moves[i].CapturePieceType - (int)moves[i].MovePieceType;
+            // TT-Move + MVV-LVA
+            move_scores[i] = moves[i] == tt_entry.Move ? 100000 :
+            moves[i].IsCapture ? 100 * (int)moves[i].CapturePieceType - (int)moves[i].MovePieceType :
+            moves[i].IsPromotion ? (int)moves[i].PromotionPieceType : 0;
         }
 
         Move best_move = Move.NullMove;
@@ -159,17 +159,17 @@ public class MyBot : IChessBot
             Move move = moves[i];
             board.MakeMove(move);
             int new_score;
-            // if (i == 0 || q_search)
-            // Principal-variation search
-            new_score = -Negamax(depth - 1, ply + 1, -beta, -alpha);
-            // else
-            // {
-            //     // Null-window search
-            //     new_score = -Negamax(depth - 1, ply + 1, -alpha - 1, -alpha);
-            //     if (new_score > alpha)
-            //         // Principal-variation search
-            //         new_score = -Negamax(depth - 1, ply + 1, -beta, -new_score);
-            // }
+            if (i == 0 || q_search)
+                // Principal-variation search
+                new_score = -Negamax(depth - 1, ply + 1, -beta, -alpha);
+            else
+            {
+                // Null-window search
+                new_score = -Negamax(depth - 1, ply + 1, -alpha - 1, -alpha);
+                if (new_score > alpha)
+                    // Principal-variation search
+                    new_score = -Negamax(depth - 1, ply + 1, -beta, -new_score);
+            }
             board.UndoMove(move);
 
             if (new_score > best_score)
@@ -192,7 +192,6 @@ public class MyBot : IChessBot
         // Determine type of node cutoff
         int flag = best_score >= beta ? BETA_FLAG : best_score > start_alpha ? EXACT_FLAG : ALPHA_FLAG;
         // Save position to transposition table
-        // if (tt_entry.Depth < depth)
         tt[key % TT_ENTRIES] = new Entry(key, best_score, depth, flag, best_move);
 
         return best_score;
