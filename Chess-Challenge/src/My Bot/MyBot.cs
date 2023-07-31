@@ -8,7 +8,6 @@ using System;
 using System.Linq;
 using System.Numerics;
 using System.Collections.Generic;
-using System.Dynamic;
 
 public class MyBot : IChessBot
 {
@@ -23,10 +22,8 @@ public class MyBot : IChessBot
     long nodes;
 #endif
 
-    // Types of Nodes
-    readonly int ALPHA_FLAG = 0, EXACT_FLAG = 1, BETA_FLAG = 2;
     // TT Entry Definition
-    record struct Entry(ulong Key, int Score, int Depth, int Flag, Move Move);
+    record struct Entry(ulong Key, int Score, sbyte Depth, byte Flag, Move Move);
     // TT Definition
     const ulong TT_ENTRIES = 0x7FFFFF;
     Entry[] tt = new Entry[TT_ENTRIES];
@@ -99,9 +96,9 @@ public class MyBot : IChessBot
         // TT Pruning
         Entry tt_entry = tt[key % TT_ENTRIES];
         if (tt_entry.Key == key && !root && tt_entry.Depth >= depth && (
-                tt_entry.Flag == EXACT_FLAG ||
-                (tt_entry.Flag == ALPHA_FLAG && tt_entry.Score <= alpha) ||
-                (tt_entry.Flag == BETA_FLAG && tt_entry.Score >= beta)))
+                tt_entry.Flag == 1 ||
+                (tt_entry.Flag == 0 && tt_entry.Score <= alpha) ||
+                (tt_entry.Flag == 2 && tt_entry.Score >= beta)))
             return tt_entry.Score;
 
         // Delta Pruning
@@ -110,6 +107,13 @@ public class MyBot : IChessBot
             best_score = Eval();
             if (best_score >= beta) return beta;
             alpha = Math.Max(alpha, best_score);
+        }
+        else if (beta - alpha == 1 && !board.IsInCheck())
+        {
+            // Static Eval Calculation for Pruning
+            int static_eval = Eval();
+            // Static Move Pruning
+            if (static_eval - 85 * depth >= beta) return static_eval - 85 * depth;
         }
 
         Move[] moves = board.GetLegalMoves(q_search && !board.IsInCheck());
@@ -161,10 +165,14 @@ public class MyBot : IChessBot
         // If there are no moves return either checkmate or draw
         if (!q_search && moves.Length == 0) return board.IsInCheck() ? -CHECKMATE + ply : 0;
 
-        // Determine type of node cutoff
-        int flag = best_score >= beta ? BETA_FLAG : best_score > start_alpha ? EXACT_FLAG : ALPHA_FLAG;
         // Save position to transposition table
-        tt[key % TT_ENTRIES] = new Entry(key, best_score, depth, flag, best_move);
+        tt[key % TT_ENTRIES] = new Entry(
+            key,
+            best_score,
+            (sbyte)depth,
+            (byte)(best_score >= beta ? 2 : best_score > start_alpha ? 1 : 0),
+            best_move
+        );
 
         return best_score;
     }
