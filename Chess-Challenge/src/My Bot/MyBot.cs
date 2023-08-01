@@ -6,8 +6,6 @@
 using ChessChallenge.API;
 using System;
 using System.Linq;
-using System.Numerics;
-using System.Collections.Generic;
 
 public class MyBot : IChessBot
 {
@@ -16,7 +14,7 @@ public class MyBot : IChessBot
     Board board;
     Timer timer;
     int time_limit;
-    Move depth_move;
+    Move best_move_root;
 
 #if UCI
     long nodes;
@@ -43,7 +41,6 @@ public class MyBot : IChessBot
 #if UCI
         nodes = 0;
 #endif
-        Move best_move = Move.NullMove;
         // Iterative Deepening Loop
         for (int depth = 1; depth < 100; depth++)
         {
@@ -52,8 +49,6 @@ public class MyBot : IChessBot
             // Check if time is expired
             if (timer.MillisecondsElapsedThisTurn > time_limit)
                 break;
-
-            best_move = depth_move;
 #if UCI
             // UCI Debug Logging
             Console.WriteLine("depth {0,2} score {1,6} nodes {2,9} nps {3,8} time {4,5} pv {5}{6}",
@@ -62,8 +57,8 @@ public class MyBot : IChessBot
                 nodes,
                 1000 * nodes / (timer.MillisecondsElapsedThisTurn + 1),
                 timer.MillisecondsElapsedThisTurn,
-                best_move.StartSquare.Name,
-                best_move.TargetSquare.Name
+                best_move_root.StartSquare.Name,
+                best_move_root.TargetSquare.Name
             );
 #endif
 
@@ -75,7 +70,7 @@ public class MyBot : IChessBot
         Console.WriteLine();
 #endif
 
-        return best_move;
+        return best_move_root;
     }
 
     private int Negamax(int depth, int ply, int alpha, int beta)
@@ -87,7 +82,7 @@ public class MyBot : IChessBot
         // Define search variables
         bool root = ply == 0;
         bool q_search = depth <= 0;
-        int best_score = -CHECKMATE;
+        int best_score = -CHECKMATE * 2;
         ulong key = board.ZobristKey;
 
         // Check for draw by repetition
@@ -132,7 +127,7 @@ public class MyBot : IChessBot
         for (int i = 0; i < moves.Length; i++)
         {
             // Check if time is expired
-            if (timer.MillisecondsElapsedThisTurn > time_limit) return 0;
+            if (timer.MillisecondsElapsedThisTurn > time_limit) return CHECKMATE;
 
             // Sort moves in one-iteration bubble sort
             for (int j = i + 1; j < moves.Length; j++)
@@ -154,7 +149,7 @@ public class MyBot : IChessBot
                 best_move = move;
 
                 // Update bestmove
-                if (root) depth_move = move;
+                if (root) best_move_root = move;
                 // Improve alpha
                 alpha = Math.Max(alpha, best_score);
                 // Beta Cutoff
