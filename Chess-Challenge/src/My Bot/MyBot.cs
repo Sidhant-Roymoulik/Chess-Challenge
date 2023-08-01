@@ -1,7 +1,7 @@
-﻿// #define UCI
+﻿#define UCI
 
-// #define TESTING
-// #define SLOW
+// #define FAST
+#define SLOW
 
 using ChessChallenge.API;
 using System;
@@ -35,7 +35,7 @@ public class MyBot : IChessBot
 #if SLOW
         time_limit = timer.MillisecondsRemaining / 2;
 #endif
-#if TESTING
+#if FAST
         time_limit = timer.MillisecondsRemaining / 2000;
 #endif
 #if UCI
@@ -51,7 +51,7 @@ public class MyBot : IChessBot
                 break;
 #if UCI
             // UCI Debug Logging
-            Console.WriteLine("depth {0,2} score {1,6} nodes {2,9} nps {3,8} time {4,5} pv {5}{6}",
+            Console.WriteLine("info depth {0,2} score {1,6} nodes {2,9} nps {3,8} time {4,5} pv {5}{6}",
                 depth,
                 score,
                 nodes,
@@ -105,10 +105,18 @@ public class MyBot : IChessBot
         }
         else if (beta - alpha == 1 && !board.IsInCheck())
         {
-            // Static Eval Calculation for Pruning
+            // Static eval calculation for pruning
             int static_eval = Eval();
             // Static Move Pruning
             if (static_eval - 85 * depth >= beta) return static_eval - 85 * depth;
+
+            // Razoring
+            // if (depth <= 2)
+            //     if (static_eval + 240 * depth < beta)
+            //     {
+            //         int score = Negamax(0, ply, alpha, beta);
+            //         if (score < beta) return score;
+            //     }
         }
 
         Move[] moves = board.GetLegalMoves(q_search && !board.IsInCheck());
@@ -234,13 +242,13 @@ public class MyBot : IChessBot
     public MyBot()
     {
         UnpackedPestoTables = new int[64][];
-        for (int i = 0; i < 64; i++)
+        UnpackedPestoTables = PackedPestoTables.Select(packedTable =>
         {
             int pieceType = 0;
-            UnpackedPestoTables[i] = decimal.GetBits(PackedPestoTables[i]).Take(3)
+            return decimal.GetBits(packedTable).Take(3)
                 .SelectMany(c => BitConverter.GetBytes(c)
                     .Select((byte square) => (int)((sbyte)square * 1.461) + pvm[pieceType++]))
                 .ToArray();
-        }
+        }).ToArray();
     }
 }
