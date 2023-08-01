@@ -1,16 +1,11 @@
-﻿// #define UCI
-
-// #define TESTING
-// #define SLOW
-
-using ChessChallenge.API;
+﻿using ChessChallenge.API;
 using System;
 using System.Linq;
-using System.Numerics;
-using System.Collections.Generic;
 
 namespace ChessChallenge.Example
 {
+    // A simple bot that can spot mate in one, and always captures the most valuable piece it can.
+    // Plays randomly otherwise.
     public class EvilBot : IChessBot
     {
         // Define globals to save tokens
@@ -46,9 +41,9 @@ namespace ChessChallenge.Example
         nodes = 0;
 #endif
             // Iterative Deepening Loop
-            for (int depth = 1; depth < 100; depth++)
+            for (int depth = 2; ;)
             {
-                int score = Negamax(depth, 0, -CHECKMATE, CHECKMATE);
+                int score = Negamax(depth++, 0, -CHECKMATE, CHECKMATE, true);
 
                 // Check if time is expired
                 if (timer.MillisecondsElapsedThisTurn > time_limit)
@@ -77,7 +72,7 @@ namespace ChessChallenge.Example
             return best_move_root;
         }
 
-        private int Negamax(int depth, int ply, int alpha, int beta)
+        private int Negamax(int depth, int ply, int alpha, int beta, bool do_null)
         {
             // Increment node counter
 #if UCI
@@ -86,11 +81,14 @@ namespace ChessChallenge.Example
             // Define search variables
             bool root = ply == 0;
             bool q_search = depth <= 0;
+            bool in_check = board.IsInCheck();
             int best_score = -CHECKMATE * 2;
             ulong key = board.ZobristKey;
 
             // Check for draw by repetition
-            if (!root && board.IsRepeatedPosition()) return -20;
+            if (!root && board.IsRepeatedPosition()) return 20 * (board.IsWhiteToMove ? -1 : 1);
+
+            // if (in_check) depth++;
 
             // TT Pruning
             Entry tt_entry = tt[key % TT_ENTRIES];
@@ -107,23 +105,30 @@ namespace ChessChallenge.Example
                 if (best_score >= beta) return beta;
                 alpha = Math.Max(alpha, best_score);
             }
-            else if (beta - alpha == 1 && !board.IsInCheck())
+            else if (beta - alpha == 1 && !in_check)
             {
                 // Static eval calculation for pruning
                 int static_eval = Eval();
                 // Static Move Pruning
                 if (static_eval - 85 * depth >= beta) return static_eval - 85 * depth;
 
+                // Null Move Pruning
+                // if (do_null && depth >= 2 && board.TrySkipTurn())
+                // {
+                //     int score = -Negamax(depth - 3 - depth / 6, ply + 1, -beta, -beta + 1, false);
+                //     board.UndoSkipTurn();
+                //     if (score >= beta && Math.Abs(score) < CHECKMATE / 2) return score;
+                // }
+
                 // Razoring
-                // if (depth <= 2)
-                //     if (static_eval + 240 * depth < beta)
-                //     {
-                //         int score = Negamax(0, ply, alpha, beta);
-                //         if (score < beta) return score;
-                //     }
+                // if (depth <= 2 && static_eval + 240 * depth < beta)
+                // {
+                //     int score = Negamax(0, ply, alpha, beta, do_null);
+                //     if (score < beta) return score;
+                // }
             }
 
-            Move[] moves = board.GetLegalMoves(q_search && !board.IsInCheck());
+            Move[] moves = board.GetLegalMoves(q_search && !in_check);
             // Move Ordering
             int[] move_scores = new int[moves.Length];
             for (int i = 0; i < moves.Length; i++)
@@ -150,9 +155,14 @@ namespace ChessChallenge.Example
                 Move move = moves[i];
                 board.MakeMove(move);
                 // Principal variation search with null-window search
-                int new_score = -Negamax(depth - 1, ply + 1, (q_search || i == 0) ? -beta : -alpha - 1, -alpha);
+                int new_score = -Negamax(
+                    depth - 1,
+                    ply + 1,
+                    (q_search || i == 0) ? -beta : -alpha - 1,
+                    -alpha,
+                    !q_search && i != 0 || do_null);
                 if (!q_search && i != 0 && new_score > alpha)
-                    new_score = -Negamax(depth - 1, ply + 1, -beta, -new_score);
+                    new_score = -Negamax(depth - 1, ply + 1, -beta, -new_score, do_null);
                 board.UndoMove(move);
 
                 if (new_score > best_score)
@@ -170,7 +180,7 @@ namespace ChessChallenge.Example
             }
 
             // If there are no moves return either checkmate or draw
-            if (!q_search && moves.Length == 0) return board.IsInCheck() ? -CHECKMATE + ply : 0;
+            if (!q_search && moves.Length == 0) return in_check ? -CHECKMATE + ply : 0;
 
             // Save position to transposition table
             tt[key % TT_ENTRIES] = new Entry(
@@ -246,14 +256,14 @@ namespace ChessChallenge.Example
         public EvilBot()
         {
             UnpackedPestoTables = new int[64][];
-            for (int i = 0; i < 64; i++)
+            UnpackedPestoTables = PackedPestoTables.Select(packedTable =>
             {
                 int pieceType = 0;
-                UnpackedPestoTables[i] = decimal.GetBits(PackedPestoTables[i]).Take(3)
+                return decimal.GetBits(packedTable).Take(3)
                     .SelectMany(c => BitConverter.GetBytes(c)
                         .Select((byte square) => (int)((sbyte)square * 1.461) + pvm[pieceType++]))
                     .ToArray();
-            }
+            }).ToArray();
         }
     }
 }
