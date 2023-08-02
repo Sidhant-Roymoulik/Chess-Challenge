@@ -1,6 +1,4 @@
 ﻿// #define UCI
-
-// #define FAST
 // #define SLOW
 
 using ChessChallenge.API;
@@ -15,16 +13,16 @@ public class MyBot : IChessBot
     Timer timer;
     int time_limit;
     Move best_move_root;
-    int[,] history_table;
+    int[,,] history_table;
 
 #if UCI
     long nodes;
 #endif
 
     // TT Entry Definition
-    record struct Entry(ulong Key, int Score, sbyte Depth, byte Flag, Move Move);
+    record struct Entry(ulong Key, int Score, Move Move, int Depth, int Flag);
     // TT Definition
-    const ulong TT_ENTRIES = 0x7FFFFF;
+    const ulong TT_ENTRIES = 0x3FFFFF;
     Entry[] tt = new Entry[TT_ENTRIES];
 
     // Required Think Method
@@ -33,12 +31,9 @@ public class MyBot : IChessBot
         board = _board;
         timer = _timer;
         time_limit = timer.MillisecondsRemaining / 40;
-        history_table = new int[7, 64];
+        history_table = new int[2, 7, 64];
 #if SLOW
         time_limit = timer.MillisecondsRemaining / 2;
-#endif
-#if FAST
-        time_limit = timer.MillisecondsRemaining / 2000;
 #endif
 #if UCI
         nodes = 0;
@@ -86,10 +81,11 @@ public class MyBot : IChessBot
         bool q_search = depth <= 0;
         bool in_check = board.IsInCheck();
         int best_score = -CHECKMATE * 2;
+        int turn = board.IsWhiteToMove ? 1 : 0;
         ulong key = board.ZobristKey;
 
         // Check for draw by repetition
-        if (!root && board.IsRepeatedPosition()) return 20 * (board.IsWhiteToMove ? -1 : 1);
+        if (!root && board.IsRepeatedPosition()) return 0;
 
         if (in_check) depth++;
 
@@ -116,20 +112,13 @@ public class MyBot : IChessBot
             if (static_eval - 85 * depth >= beta) return static_eval - 85 * depth;
 
             // Null Move Pruning
-            // if (do_null && depth >= 3)
-            // {
-            //     board.TrySkipTurn();
-            //     int score = -Negamax(depth - 3, ply + 1, -beta, -beta + 1, false);
-            //     board.UndoSkipTurn();
-            //     if (score >= beta && Math.Abs(score) < CHECKMATE / 2) return score;
-            // }
-
-            // Razoring
-            // if (depth <= 2 && static_eval + 80 * depth < beta)
-            // {
-            //     int score = Negamax(0, ply, alpha, beta, do_null);
-            //     if (score < beta) return score;
-            // }
+            if (do_null && depth >= 2)
+            {
+                board.TrySkipTurn();
+                int score = -Negamax(depth - 3 - depth / 6, ply + 1, -beta, -beta + 1, false);
+                board.UndoSkipTurn();
+                if (score >= beta) return score;
+            }
         }
 
         Move[] moves = board.GetLegalMoves(q_search && !in_check);
@@ -141,8 +130,7 @@ public class MyBot : IChessBot
             // TT-Move + MVV-LVA
             move_scores[i] = move == tt_entry.Move ? 1000000 :
             move.IsCapture ? 1000 * (int)move.CapturePieceType - (int)move.MovePieceType :
-            move.IsPromotion ? (int)move.PromotionPieceType :
-            move_scores[i] = history_table[(int)move.MovePieceType, move.TargetSquare.Index];
+            history_table[turn, (int)move.MovePieceType, move.TargetSquare.Index];
         }
 
         Move best_move = Move.NullMove;
@@ -191,7 +179,7 @@ public class MyBot : IChessBot
                 // Beta Cutoff
                 if (alpha >= beta)
                 {
-                    if (!q_search && !move.IsCapture) history_table[(int)move.MovePieceType, move.TargetSquare.Index] += depth * depth;
+                    if (!q_search && !move.IsCapture) history_table[turn, (int)move.MovePieceType, move.TargetSquare.Index] += depth * depth;
                     break;
                 }
             }
@@ -204,9 +192,9 @@ public class MyBot : IChessBot
         tt[key % TT_ENTRIES] = new Entry(
             key,
             best_score,
-            (sbyte)depth,
-            (byte)(best_score >= beta ? 2 : best_score > start_alpha ? 1 : 0),
-            best_move
+            best_move,
+            depth,
+            best_score >= beta ? 2 : best_score > start_alpha ? 1 : 0
         );
 
         return best_score;
