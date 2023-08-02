@@ -15,6 +15,7 @@ public class MyBot : IChessBot
     Timer timer;
     int time_limit;
     Move best_move_root;
+    int[,] history_table;
 
 #if UCI
     long nodes;
@@ -32,6 +33,7 @@ public class MyBot : IChessBot
         board = _board;
         timer = _timer;
         time_limit = timer.MillisecondsRemaining / 40;
+        history_table = new int[7, 64];
 #if SLOW
         time_limit = timer.MillisecondsRemaining / 2;
 #endif
@@ -42,9 +44,9 @@ public class MyBot : IChessBot
         nodes = 0;
 #endif
         // Iterative Deepening Loop
-        for (int depth = 2; ;)
+        for (int depth = 1; ;)
         {
-            int score = Negamax(depth++, 0, -CHECKMATE, CHECKMATE, true);
+            int score = Negamax(++depth, 0, -CHECKMATE, CHECKMATE, true);
 
             // Check if time is expired
             if (timer.MillisecondsElapsedThisTurn > time_limit)
@@ -114,15 +116,16 @@ public class MyBot : IChessBot
             if (static_eval - 85 * depth >= beta) return static_eval - 85 * depth;
 
             // Null Move Pruning
-            // if (do_null && depth >= 2 && board.TrySkipTurn())
+            // if (do_null && depth >= 3)
             // {
-            //     int score = -Negamax(depth - 3 - depth / 6, ply + 1, -beta, -beta + 1, false);
+            //     board.TrySkipTurn();
+            //     int score = -Negamax(depth - 3, ply + 1, -beta, -beta + 1, false);
             //     board.UndoSkipTurn();
             //     if (score >= beta && Math.Abs(score) < CHECKMATE / 2) return score;
             // }
 
             // Razoring
-            // if (depth <= 2 && static_eval + 240 * depth < beta)
+            // if (depth <= 2 && static_eval + 80 * depth < beta)
             // {
             //     int score = Negamax(0, ply, alpha, beta, do_null);
             //     if (score < beta) return score;
@@ -134,10 +137,12 @@ public class MyBot : IChessBot
         int[] move_scores = new int[moves.Length];
         for (int i = 0; i < moves.Length; i++)
         {
+            Move move = moves[i];
             // TT-Move + MVV-LVA
-            move_scores[i] = moves[i] == tt_entry.Move ? 100000 :
-            moves[i].IsCapture ? 100 * (int)moves[i].CapturePieceType - (int)moves[i].MovePieceType :
-            moves[i].IsPromotion ? (int)moves[i].PromotionPieceType : 0;
+            move_scores[i] = move == tt_entry.Move ? 1000000 :
+            move.IsCapture ? 1000 * (int)move.CapturePieceType - (int)move.MovePieceType :
+            move.IsPromotion ? (int)move.PromotionPieceType :
+            move_scores[i] = history_table[(int)move.MovePieceType, move.TargetSquare.Index];
         }
 
         Move best_move = Move.NullMove;
@@ -148,7 +153,7 @@ public class MyBot : IChessBot
             if (timer.MillisecondsElapsedThisTurn > time_limit) return CHECKMATE;
 
             // Sort moves in one-iteration bubble sort
-            for (int j = i + 1; j < moves.Length; j++)
+            for (int j = i; ++j < moves.Length;)
                 if (move_scores[i] < move_scores[j])
                     (moves[i], moves[j], move_scores[i], move_scores[j]) =
                     (moves[j], moves[i], move_scores[j], move_scores[i]);
@@ -156,14 +161,22 @@ public class MyBot : IChessBot
             Move move = moves[i];
             board.MakeMove(move);
             // Principal variation search with null-window search
+            bool use_full_search = q_search || i == 0;
             int new_score = -Negamax(
                 depth - 1,
                 ply + 1,
-                (q_search || i == 0) ? -beta : -alpha - 1,
+                use_full_search ? -beta : -alpha - 1,
                 -alpha,
-                !q_search && i != 0 || do_null);
-            if (!q_search && i != 0 && new_score > alpha)
-                new_score = -Negamax(depth - 1, ply + 1, -beta, -new_score, do_null);
+                !use_full_search || do_null
+                );
+            if (!use_full_search && new_score > alpha)
+                new_score = -Negamax(
+                    depth - 1,
+                    ply + 1,
+                    -beta,
+                    -new_score,
+                    do_null
+                    );
             board.UndoMove(move);
 
             if (new_score > best_score)
@@ -176,7 +189,11 @@ public class MyBot : IChessBot
                 // Improve alpha
                 alpha = Math.Max(alpha, best_score);
                 // Beta Cutoff
-                if (alpha >= beta) break;
+                if (alpha >= beta)
+                {
+                    if (!q_search && !move.IsCapture) history_table[(int)move.MovePieceType, move.TargetSquare.Index] += depth * depth;
+                    break;
+                }
             }
         }
 
@@ -201,8 +218,8 @@ public class MyBot : IChessBot
     // None, Pawn, Knight, Bishop, Rook, Queen, King 
     private readonly short[] pvm = { 82, 337, 365, 477, 1025, 20000, // Middlegame
                                      94, 281, 297, 512, 936, 20000}; // Endgame
-    // Big table packed with data from premade piece square tables
-    // Unpack using PackedEvaluationTables[set, rank] = file
+                                                                     // Big table packed with data from premade piece square tables
+                                                                     // Unpack using PackedEvaluationTables[set, rank] = file
     private readonly decimal[] PackedPestoTables = {
         63746705523041458768562654720m, 71818693703096985528394040064m, 75532537544690978830456252672m, 75536154932036771593352371712m, 76774085526445040292133284352m, 3110608541636285947269332480m, 936945638387574698250991104m, 75531285965747665584902616832m,
         77047302762000299964198997571m, 3730792265775293618620982364m, 3121489077029470166123295018m, 3747712412930601838683035969m, 3763381335243474116535455791m, 8067176012614548496052660822m, 4977175895537975520060507415m, 2475894077091727551177487608m,
@@ -227,7 +244,7 @@ public class MyBot : IChessBot
         foreach (bool stm in new[] { true, false })
         {
             // Iterate through all piece types
-            for (int piece = 0; piece < 6; piece++)
+            for (int piece = -1; ++piece < 6;)
             {
                 // Get piece bitboard
                 ulong bb = board.GetPieceBitboard((PieceType)(piece + 1), stm);
