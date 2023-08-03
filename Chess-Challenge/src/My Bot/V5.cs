@@ -1,13 +1,14 @@
-﻿// #define UCI
+// #define UCI
 // #define SLOW
 
 using ChessChallenge.API;
 using System;
 using System.Linq;
 
-public class MyBot : IChessBot
+public class V5 : IChessBot
 {
     // Define globals to save tokens
+    readonly int CHECKMATE = 100000;
     Board board;
     Timer timer;
     int time_limit;
@@ -32,7 +33,7 @@ public class MyBot : IChessBot
         time_limit = timer.MillisecondsRemaining / 40;
         history_table = new int[2, 7, 64];
 #if SLOW
-        time_limit = timer.MillisecondsRemaining / 1;
+        time_limit = timer.MillisecondsRemaining / 2;
 #endif
 #if UCI
         nodes = 0;
@@ -40,7 +41,7 @@ public class MyBot : IChessBot
         // Iterative Deepening Loop
         for (int depth = 1; ;)
         {
-            int score = Negamax(++depth, 0, -100000, 100000, true);
+            int score = Negamax(++depth, 0, -CHECKMATE, CHECKMATE, true);
 
             // Check if time is expired
             if (timer.MillisecondsElapsedThisTurn > time_limit)
@@ -59,7 +60,7 @@ public class MyBot : IChessBot
 #endif
 
             // If a checkmate is found, exit search early to save time
-            if (score > 100000 / 2)
+            if (score > CHECKMATE / 2)
                 break;
         }
 #if UCI
@@ -76,8 +77,11 @@ public class MyBot : IChessBot
         nodes++;
 #endif
         // Define search variables
-        bool root = ply == 0, q_search = depth <= 0, in_check = board.IsInCheck();
-        int best_score = -100000 * 2, turn = board.IsWhiteToMove ? 1 : 0;
+        bool root = ply == 0;
+        bool q_search = depth <= 0;
+        bool in_check = board.IsInCheck();
+        int best_score = -CHECKMATE * 2;
+        int turn = board.IsWhiteToMove ? 1 : 0;
         ulong key = board.ZobristKey;
 
         // Check for draw by repetition
@@ -111,7 +115,7 @@ public class MyBot : IChessBot
             if (do_null && depth >= 2)
             {
                 board.TrySkipTurn();
-                int score = -Negamax(depth - 3 - depth / 6, ply + 1, -beta, 1 - beta, false);
+                int score = -Negamax(depth - 3 - depth / 6, ply + 1, -beta, -beta + 1, false);
                 board.UndoSkipTurn();
                 if (score >= beta) return score;
             }
@@ -134,7 +138,7 @@ public class MyBot : IChessBot
         for (int i = 0; i < moves.Length; i++)
         {
             // Check if time is expired
-            if (timer.MillisecondsElapsedThisTurn > time_limit) return 100000;
+            if (timer.MillisecondsElapsedThisTurn > time_limit) return CHECKMATE;
 
             // Sort moves in one-iteration bubble sort
             for (int j = i; ++j < moves.Length;)
@@ -182,7 +186,7 @@ public class MyBot : IChessBot
         }
 
         // If there are no moves return either checkmate or draw
-        if (!q_search && moves.Length == 0) return in_check ? -100000 + ply : 0;
+        if (!q_search && moves.Length == 0) return in_check ? -CHECKMATE + ply : 0;
 
         // Save position to transposition table
         tt[key % TT_ENTRIES] = new Entry(
@@ -231,7 +235,8 @@ public class MyBot : IChessBot
             for (int piece = -1; ++piece < 6;)
             {
                 // Get piece bitboard
-                ulong bb = board.GetPieceBitboard((PieceType)piece + 1, stm);
+                ulong bb = board.GetPieceBitboard((PieceType)(piece + 1), stm);
+
                 // Iterate through each individual piece
                 while (bb != 0)
                 {
@@ -244,15 +249,17 @@ public class MyBot : IChessBot
                     phase += phase_weight[piece];
                 }
             }
-            // Flip sign of eval before switching sides
             mg = -mg;
             eg = -eg;
         }
+
+        // In case of premature promotion
+        phase = Math.Min(phase, 24);
         // Tapered evaluation
         return (mg * phase + eg * (24 - phase)) / 24 * (board.IsWhiteToMove ? 1 : -1);
     }
 
-    public MyBot()
+    public V5()
     {
         UnpackedPestoTables = new int[64][];
         UnpackedPestoTables = PackedPestoTables.Select(packedTable =>
