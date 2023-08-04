@@ -59,7 +59,7 @@ public class MyBot : IChessBot
 #endif
 
             // If a checkmate is found, exit search early to save time
-            if (score > 100000 / 2)
+            if (score > 50000)
                 break;
         }
 #if UCI
@@ -77,7 +77,7 @@ public class MyBot : IChessBot
 #endif
         // Define search variables
         bool root = ply == 0, q_search = depth <= 0, in_check = board.IsInCheck();
-        int best_score = -100000 * 2, turn = board.IsWhiteToMove ? 1 : 0;
+        int best_score = -200000, turn = board.IsWhiteToMove ? 1 : 0;
         ulong key = board.ZobristKey;
 
         // Check for draw by repetition
@@ -182,7 +182,7 @@ public class MyBot : IChessBot
         }
 
         // If there are no moves return either checkmate or draw
-        if (!q_search && moves.Length == 0) return in_check ? -100000 + ply : 0;
+        if (!q_search && moves.Length == 0) return in_check ? ply - 100000 : 0;
 
         // Save position to transposition table
         tt[key % TT_ENTRIES] = new Entry(
