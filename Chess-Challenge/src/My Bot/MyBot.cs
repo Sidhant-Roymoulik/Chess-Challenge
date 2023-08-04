@@ -117,17 +117,13 @@ public class MyBot : IChessBot
             }
         }
 
-        Move[] moves = board.GetLegalMoves(q_search && !in_check);
         // Move Ordering
-        int[] move_scores = new int[moves.Length];
-        for (int i = 0; i < moves.Length; i++)
-        {
-            Move move = moves[i];
-            // TT-Move + MVV-LVA
-            move_scores[i] = move == tt_entry.Move ? 1000000 :
-            move.IsCapture ? 1000 * (int)move.CapturePieceType - (int)move.MovePieceType :
-            history_table[turn, (int)move.MovePieceType, move.TargetSquare.Index];
-        }
+        Move[] moves = board.GetLegalMoves(q_search && !in_check).OrderByDescending(
+            move => 
+                move == tt_entry.Move ? 1000000 :
+                move.IsCapture ? 1000 * (int)move.CapturePieceType - (int)move.MovePieceType :
+                history_table[turn, (int)move.MovePieceType, move.TargetSquare.Index]
+        ).ToArray();
 
         Move best_move = Move.NullMove;
         int start_alpha = alpha;
@@ -135,12 +131,6 @@ public class MyBot : IChessBot
         {
             // Check if time is expired
             if (timer.MillisecondsElapsedThisTurn > time_limit) return 100000;
-
-            // Sort moves in one-iteration bubble sort
-            for (int j = i; ++j < moves.Length;)
-                if (move_scores[i] < move_scores[j])
-                    (moves[i], moves[j], move_scores[i], move_scores[j]) =
-                    (moves[j], moves[i], move_scores[j], move_scores[i]);
 
             Move move = moves[i];
             board.MakeMove(move);
