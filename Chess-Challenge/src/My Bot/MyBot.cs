@@ -1,5 +1,5 @@
-﻿#define UCI
-#define SLOW
+﻿// #define UCI
+// #define SLOW
 
 using ChessChallenge.API;
 using System;
@@ -123,11 +123,11 @@ public class MyBot : IChessBot
             }
 
             // Razoring
-            // if(depth <= 2) 
-            //     if(static_eval + 3*futility_margins[depth] < alpha) {
-            //         int score = Negamax(0, ply, alpha, beta, do_null);
-            //         if(score < alpha) return alpha;
-            //     }
+            if(depth <= 2) 
+                if(static_eval + 3*futility_margins[depth] < alpha) {
+                    int score = Negamax(0, ply, alpha, beta, do_null);
+                    if(score < alpha) return alpha;
+                }
 
             // Futility Pruning Check
             can_futility_prune = depth <= 8 && static_eval + futility_margins[depth] <= alpha;
