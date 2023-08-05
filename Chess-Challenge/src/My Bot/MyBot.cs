@@ -1,5 +1,5 @@
-﻿// #define UCI
-// #define SLOW
+﻿#define UCI
+#define SLOW
 
 using ChessChallenge.API;
 using System;
@@ -12,7 +12,6 @@ public class MyBot : IChessBot
     Timer timer;
     int time_limit;
     Move best_move_root;
-    int[,,] history_table;
 
 #if UCI
     long nodes;
@@ -69,6 +68,9 @@ public class MyBot : IChessBot
         return best_move_root;
     }
 
+    int[] futility_margins;
+    int[,,] history_table;
+
     private int Negamax(int depth, int ply, int alpha, int beta, bool do_null)
     {
         // Increment node counter
@@ -76,7 +78,11 @@ public class MyBot : IChessBot
         nodes++;
 #endif
         // Define search variables
-        bool root = ply == 0, q_search = depth <= 0, in_check = board.IsInCheck();
+        bool root = ply == 0, 
+            q_search = depth <= 0, 
+            in_check = board.IsInCheck(), 
+            pv_node = beta - alpha != 1,
+            can_futility_prune = false;
         int best_score = -200000, turn = board.IsWhiteToMove ? 1 : 0;
         ulong key = board.ZobristKey;
 
@@ -100,7 +106,7 @@ public class MyBot : IChessBot
             if (best_score >= beta) return beta;
             alpha = Math.Max(alpha, best_score);
         }
-        else if (beta - alpha == 1 && !in_check)
+        else if (!pv_node && !in_check)
         {
             // Static eval calculation for pruning
             int static_eval = Eval();
@@ -115,6 +121,16 @@ public class MyBot : IChessBot
                 board.UndoSkipTurn();
                 if (score >= beta) return score;
             }
+
+            // Razoring
+            // if(depth <= 2) 
+            //     if(static_eval + 3*futility_margins[depth] < alpha) {
+            //         int score = Negamax(0, ply, alpha, beta, do_null);
+            //         if(score < alpha) return alpha;
+            //     }
+
+            // Futility Pruning Check
+            can_futility_prune = depth <= 8 && static_eval + futility_margins[depth] <= alpha;
         }
 
         // Move Ordering
@@ -132,7 +148,13 @@ public class MyBot : IChessBot
             // Check if time is expired
             if (timer.MillisecondsElapsedThisTurn > time_limit) return 100000;
 
+
             Move move = moves[i];
+            bool tactical = move.IsCapture || move.IsPromotion;
+
+            // Futility Pruning
+            if(can_futility_prune && i > 0 && !tactical) continue;
+
             board.MakeMove(move);
             // Principal variation search with null-window search
             bool use_full_search = q_search || i == 0;
@@ -244,6 +266,7 @@ public class MyBot : IChessBot
 
     public MyBot()
     {
+        // Precompute PSTs
         UnpackedPestoTables = new int[64][];
         UnpackedPestoTables = PackedPestoTables.Select(packedTable =>
         {
@@ -253,5 +276,10 @@ public class MyBot : IChessBot
                     .Select((byte square) => (int)((sbyte)square * 1.461) + pvm[pieceType++]))
                 .ToArray();
         }).ToArray();
+
+        // Precompute futility margins
+        futility_margins = new int[9];
+        for(int i = 1; i < 9; i++)
+            futility_margins[i] = 40 + 60*i;
     }
 }
