@@ -12,6 +12,7 @@ public class MyBot : IChessBot
     Timer timer;
     int time_limit;
     Move best_move_root;
+    int[,,] history_table;
 
 #if UCI
     long nodes;
@@ -20,8 +21,7 @@ public class MyBot : IChessBot
     // TT Entry Definition
     record struct Entry(ulong Key, int Score, Move Move, int Depth, int Flag);
     // TT Definition
-    const ulong TT_ENTRIES = 0x3FFFFF;
-    Entry[] tt = new Entry[TT_ENTRIES];
+    Entry[] tt = new Entry[0x400000];
 
     // Required Think Method
     public Move Think(Board _board, Timer _timer)
@@ -68,9 +68,6 @@ public class MyBot : IChessBot
         return best_move_root;
     }
 
-    int[] futility_margins;
-    int[,,] history_table;
-
     private int Negamax(int depth, int ply, int alpha, int beta, bool do_null)
     {
         // Increment node counter
@@ -83,7 +80,8 @@ public class MyBot : IChessBot
             in_check = board.IsInCheck(), 
             pv_node = beta - alpha != 1,
             can_futility_prune = false;
-        int best_score = -200000, turn = board.IsWhiteToMove ? 1 : 0;
+        int best_score = -200000, 
+            turn = board.IsWhiteToMove ? 1 : 0;
         ulong key = board.ZobristKey;
 
         // Check for draw by repetition
@@ -92,7 +90,7 @@ public class MyBot : IChessBot
         if (in_check) depth++;
 
         // TT Pruning
-        Entry tt_entry = tt[key % TT_ENTRIES];
+        Entry tt_entry = tt[key & 0x3FFFFF];
         if (tt_entry.Key == key && !root && tt_entry.Depth >= depth && (
                 tt_entry.Flag == 1 ||
                 (tt_entry.Flag == 0 && tt_entry.Score <= alpha) ||
@@ -122,15 +120,8 @@ public class MyBot : IChessBot
                 if (score >= beta) return score;
             }
 
-            // Razoring
-            if(depth <= 2) 
-                if(static_eval + 3*futility_margins[depth] < alpha) {
-                    int score = Negamax(0, ply, alpha, beta, do_null);
-                    if(score < alpha) return alpha;
-                }
-
             // Futility Pruning Check
-            can_futility_prune = depth <= 8 && static_eval + futility_margins[depth] <= alpha;
+            can_futility_prune = depth <= 8 && static_eval + 40 + 60 * depth <= alpha;
         }
 
         // Move Ordering
@@ -148,14 +139,33 @@ public class MyBot : IChessBot
             // Check if time is expired
             if (timer.MillisecondsElapsedThisTurn > time_limit) return 100000;
 
-
             Move move = moves[i];
-            bool tactical = move.IsCapture || move.IsPromotion;
-
-            // Futility Pruning
-            if(can_futility_prune && i > 0 && !tactical) continue;
 
             board.MakeMove(move);
+            bool tactical = pv_node || move.IsCapture || move.IsPromotion || in_check || board.IsInCheck();
+
+            // Late Move Pruning
+            // if(!q_search && 
+            //     !tactical && 
+            //     depth <= 5 && 
+            //     i >= 8 * depth)
+            // {
+            //     board.UndoMove(move);
+            //     continue;
+            // }
+
+            // Futility Pruning
+            if(can_futility_prune && 
+                !tactical && 
+                i > 0)
+            {
+                board.UndoMove(move);
+                continue;
+            }
+
+            // Late Move Reductions
+            // int R = q_search || tactical ? 0 : depth / 4 + i / 12;
+            
             // Principal variation search with null-window search
             bool use_full_search = q_search || i == 0;
             int new_score = -Negamax(
@@ -197,7 +207,7 @@ public class MyBot : IChessBot
         if (!q_search && moves.Length == 0) return in_check ? ply - 100000 : 0;
 
         // Save position to transposition table
-        tt[key % TT_ENTRIES] = new Entry(
+        tt[key & 0x3FFFFF] = new Entry(
             key,
             best_score,
             best_move,
@@ -227,7 +237,7 @@ public class MyBot : IChessBot
         68369566912511282590874449920m, 72396532057599326246617936384m, 75186737388538008131054524416m, 77027917484951889231108827392m, 73655004947793353634062267392m, 76417372019396591550492896512m, 74568981255592060493492515584m, 70529879645288096380279255040m,
     };
 
-    private readonly int[][] UnpackedPestoTables;
+    private readonly int[][] UnpackedPestoTables = new int[64][];
 
     // TODO: King Safety
     // TODO: Pawn Structure
@@ -267,7 +277,6 @@ public class MyBot : IChessBot
     public MyBot()
     {
         // Precompute PSTs
-        UnpackedPestoTables = new int[64][];
         UnpackedPestoTables = PackedPestoTables.Select(packedTable =>
         {
             int pieceType = 0;
@@ -276,10 +285,5 @@ public class MyBot : IChessBot
                     .Select((byte square) => (int)((sbyte)square * 1.461) + pvm[pieceType++]))
                 .ToArray();
         }).ToArray();
-
-        // Precompute futility margins
-        futility_margins = new int[9];
-        for(int i = 1; i < 9; i++)
-            futility_margins[i] = 40 + 60*i;
     }
 }
