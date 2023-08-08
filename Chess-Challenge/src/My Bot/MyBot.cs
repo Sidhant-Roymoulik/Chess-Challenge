@@ -76,9 +76,8 @@ public class MyBot : IChessBot
 #endif
         // Define search variables
         bool root = ply == 0, 
-            q_search = depth <= 0, 
             in_check = board.IsInCheck(), 
-            pv_node = beta - alpha != 1,
+            pv_node = beta - alpha > 1,
             can_futility_prune = false;
         int best_score = -200000, 
             turn = board.IsWhiteToMove ? 1 : 0;
@@ -88,6 +87,8 @@ public class MyBot : IChessBot
         if (!root && board.IsRepeatedPosition()) return 0;
 
         if (in_check) depth++;
+
+        bool q_search = depth <= 0;
 
         // TT Pruning
         Entry tt_entry = tt[key & 0x3FFFFF];
@@ -108,9 +109,9 @@ public class MyBot : IChessBot
         {
             // Static eval calculation for pruning
             int static_eval = Eval();
-            // Static Move Pruning
-            if (static_eval - 85 * depth >= beta) return static_eval - 85 * depth;
 
+            // Static Null Move Pruning
+            if (static_eval - 85 * depth >= beta) return static_eval - 85 * depth;
             // Null Move Pruning
             if (do_null && depth >= 2)
             {
@@ -119,7 +120,11 @@ public class MyBot : IChessBot
                 board.UndoSkipTurn();
                 if (score >= beta) return score;
             }
-
+            // Razoring
+            // if (depth <= 2 && 
+            //     static_eval + 120 + 180 * depth < alpha && 
+            //     Negamax(0, ply, alpha, beta, do_null) < alpha)
+            //     return alpha;
             // Futility Pruning Check
             can_futility_prune = depth <= 8 && static_eval + 40 + 60 * depth <= alpha;
         }

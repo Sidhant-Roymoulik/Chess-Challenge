@@ -23,7 +23,7 @@ public class V2 : IChessBot
     public Move Iterative_Deepening()
     {
         nodes = 0;
-        time_limit = timer.MillisecondsRemaining / 2000;
+        time_limit = timer.MillisecondsRemaining / 40;
 
         Move[] moves = board.GetLegalMoves();
         Move best_move = moves[0];

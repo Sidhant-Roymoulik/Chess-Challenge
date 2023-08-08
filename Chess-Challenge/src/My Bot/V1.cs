@@ -23,7 +23,7 @@ public class V1 : IChessBot
 
     public Move Iterative_Deepening()
     {
-        time_limit = timer.MillisecondsRemaining / 2000;
+        time_limit = timer.MillisecondsRemaining / 40;
         start = DateTime.Now;
         nodes = 0;
 

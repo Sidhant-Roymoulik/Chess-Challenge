@@ -37,7 +37,7 @@ public class V3 : IChessBot
         board = _board;
         timer = _timer;
         nodes = 0;
-        time_limit = timer.MillisecondsRemaining / 2000;
+        time_limit = timer.MillisecondsRemaining / 40;
         return Iterative_Deepening();
     }
 
