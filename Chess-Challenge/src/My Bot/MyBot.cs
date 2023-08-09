@@ -120,11 +120,6 @@ public class MyBot : IChessBot
                 board.UndoSkipTurn();
                 if (score >= beta) return score;
             }
-            // Razoring
-            // if (depth <= 2 && 
-            //     static_eval + 120 + 180 * depth < alpha && 
-            //     Negamax(0, ply, alpha, beta, do_null) < alpha)
-            //     return alpha;
             // Futility Pruning Check
             can_futility_prune = depth <= 8 && static_eval + 40 + 60 * depth <= alpha;
         }
@@ -139,7 +134,7 @@ public class MyBot : IChessBot
 
         Move best_move = Move.NullMove;
         int start_alpha = alpha;
-        for (int i = 0; i < moves.Length; i++)
+        for (int i = 0, new_score = 0; i < moves.Length; i++)
         {
             // Check if time is expired
             if (timer.MillisecondsElapsedThisTurn > time_limit) return 100000;
@@ -149,16 +144,6 @@ public class MyBot : IChessBot
             board.MakeMove(move);
             bool tactical = pv_node || move.IsCapture || move.IsPromotion || in_check || board.IsInCheck();
 
-            // Late Move Pruning
-            // if(!q_search && 
-            //     !tactical && 
-            //     depth <= 5 && 
-            //     i >= 8 * depth)
-            // {
-            //     board.UndoMove(move);
-            //     continue;
-            // }
-
             // Futility Pruning
             if(can_futility_prune && 
                 !tactical && 
@@ -167,27 +152,19 @@ public class MyBot : IChessBot
                 board.UndoMove(move);
                 continue;
             }
-
-            // Late Move Reductions
-            // int R = q_search || tactical ? 0 : depth / 4 + i / 12;
-            
-            // Principal variation search with null-window search
-            bool use_full_search = q_search || i == 0;
-            int new_score = -Negamax(
-                depth - 1,
-                ply + 1,
-                use_full_search ? -beta : -alpha - 1,
-                -alpha,
-                !use_full_search || do_null
-                );
-            if (!use_full_search && new_score > alpha)
-                new_score = -Negamax(
-                    depth - 1,
-                    ply + 1,
-                    -beta,
-                    -new_score,
-                    do_null
-                    );
+            // Using local method to simplify multiple similar calls to Negamax
+            int Search(int reduction, int next_alpha) => -Negamax(depth - reduction, 
+                                                                    ply + 1, 
+                                                                    -next_alpha, 
+                                                                    -alpha, 
+                                                                    do_null);
+            // PVS + LMR (Saves tokens, I will not explain, ask Tyrant)
+            if(i == 0 || q_search) new_score = Search(1, beta);
+            else if ((new_score = tactical || i < 8 || depth < 3 ? 
+                                    alpha + 1 : 
+                                    Search(3, alpha + 1)) > alpha && 
+                (new_score = Search(1, alpha + 1)) > alpha)
+                new_score = Search(1, beta);
             board.UndoMove(move);
 
             if (new_score > best_score)
@@ -249,34 +226,24 @@ public class MyBot : IChessBot
     // TODO: Mobility
     private int Eval()
     {
-        // Define evaluation variables
-        int mg = 0, eg = 0, phase = 0;
-        // Iterate through both players
-        foreach (bool stm in new[] { true, false })
+        int middlegame = 0, endgame = 0, gamephase = 0, sideToMove = 2;
+        for (; --sideToMove >= 0;)
         {
-            // Iterate through all piece types
-            for (int piece = -1; ++piece < 6;)
-            {
-                // Get piece bitboard
-                ulong bb = board.GetPieceBitboard((PieceType)piece + 1, stm);
-                // Iterate through each individual piece
-                while (bb != 0)
+            for (int piece = -1, square; ++piece < 6;)
+                for (ulong mask = board.GetPieceBitboard((PieceType)piece + 1, sideToMove > 0); mask != 0;)
                 {
-                    // Get square index for pst based on color
-                    int sq = BitboardHelper.ClearAndGetIndexOfLSB(ref bb) ^ (stm ? 56 : 0);
-                    // Increment mg and eg score
-                    mg += UnpackedPestoTables[sq][piece];
-                    eg += UnpackedPestoTables[sq][piece + 6];
-                    // Updating position phase
-                    phase += phase_weight[piece];
+                    // Gamephase, middlegame -> endgame
+                    gamephase += phase_weight[piece];
+
+                    // Material and square evaluation
+                    square = BitboardHelper.ClearAndGetIndexOfLSB(ref mask) ^ 56 * sideToMove;
+                    middlegame += UnpackedPestoTables[square][piece];
+                    endgame += UnpackedPestoTables[square][piece + 6];
                 }
-            }
-            // Flip sign of eval before switching sides
-            mg = -mg;
-            eg = -eg;
+            middlegame = -middlegame;
+            endgame = -endgame;
         }
-        // Tapered evaluation
-        return (mg * phase + eg * (24 - phase)) / 24 * (board.IsWhiteToMove ? 1 : -1);
+        return (middlegame * gamephase + endgame * (24 - gamephase)) / 24 * (board.IsWhiteToMove ? 1 : -1);
     }
 
     public MyBot()
@@ -287,7 +254,7 @@ public class MyBot : IChessBot
             int pieceType = 0;
             return decimal.GetBits(packedTable).Take(3)
                 .SelectMany(c => BitConverter.GetBytes(c)
-                    .Select((byte square) => (int)((sbyte)square * 1.461) + pvm[pieceType++]))
+                    .Select(square => (int)((sbyte)square * 1.461) + pvm[pieceType++]))
                 .ToArray();
         }).ToArray();
     }

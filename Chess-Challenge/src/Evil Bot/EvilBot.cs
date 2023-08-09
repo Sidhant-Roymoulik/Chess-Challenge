@@ -11,6 +11,7 @@ namespace ChessChallenge.Example
     Timer timer;
     int time_limit;
     Move best_move_root;
+    int[,,] history_table;
 
 #if UCI
     long nodes;
@@ -19,8 +20,7 @@ namespace ChessChallenge.Example
     // TT Entry Definition
     record struct Entry(ulong Key, int Score, Move Move, int Depth, int Flag);
     // TT Definition
-    const ulong TT_ENTRIES = 0x3FFFFF;
-    Entry[] tt = new Entry[TT_ENTRIES];
+    Entry[] tt = new Entry[0x400000];
 
     // Required Think Method
     public Move Think(Board _board, Timer _timer)
@@ -67,9 +67,6 @@ namespace ChessChallenge.Example
         return best_move_root;
     }
 
-    int[] futility_margins;
-    int[,,] history_table;
-
     private int Negamax(int depth, int ply, int alpha, int beta, bool do_null)
     {
         // Increment node counter
@@ -78,11 +75,11 @@ namespace ChessChallenge.Example
 #endif
         // Define search variables
         bool root = ply == 0, 
-            q_search = depth <= 0, 
             in_check = board.IsInCheck(), 
-            pv_node = beta - alpha != 1,
+            pv_node = beta - alpha > 1,
             can_futility_prune = false;
-        int best_score = -200000, turn = board.IsWhiteToMove ? 1 : 0;
+        int best_score = -200000, 
+            turn = board.IsWhiteToMove ? 1 : 0;
         ulong key = board.ZobristKey;
 
         // Check for draw by repetition
@@ -90,8 +87,10 @@ namespace ChessChallenge.Example
 
         if (in_check) depth++;
 
+        bool q_search = depth <= 0;
+
         // TT Pruning
-        Entry tt_entry = tt[key % TT_ENTRIES];
+        Entry tt_entry = tt[key & 0x3FFFFF];
         if (tt_entry.Key == key && !root && tt_entry.Depth >= depth && (
                 tt_entry.Flag == 1 ||
                 (tt_entry.Flag == 0 && tt_entry.Score <= alpha) ||
@@ -109,9 +108,9 @@ namespace ChessChallenge.Example
         {
             // Static eval calculation for pruning
             int static_eval = Eval();
-            // Static Move Pruning
-            if (static_eval - 85 * depth >= beta) return static_eval - 85 * depth;
 
+            // Static Null Move Pruning
+            if (static_eval - 85 * depth >= beta) return static_eval - 85 * depth;
             // Null Move Pruning
             if (do_null && depth >= 2)
             {
@@ -120,16 +119,8 @@ namespace ChessChallenge.Example
                 board.UndoSkipTurn();
                 if (score >= beta) return score;
             }
-
-            // Razoring
-            // if(depth <= 2) 
-            //     if(static_eval + 3*futility_margins[depth] < alpha) {
-            //         int score = Negamax(0, ply, alpha, beta, do_null);
-            //         if(score < alpha) return alpha;
-            //     }
-
             // Futility Pruning Check
-            can_futility_prune = depth <= 8 && static_eval + futility_margins[depth] <= alpha;
+            can_futility_prune = depth <= 8 && static_eval + 40 + 60 * depth <= alpha;
         }
 
         // Move Ordering
@@ -147,14 +138,20 @@ namespace ChessChallenge.Example
             // Check if time is expired
             if (timer.MillisecondsElapsedThisTurn > time_limit) return 100000;
 
-
             Move move = moves[i];
-            bool tactical = move.IsCapture || move.IsPromotion;
-
-            // Futility Pruning
-            if(can_futility_prune && i > 0 && !tactical) continue;
 
             board.MakeMove(move);
+            bool tactical = pv_node || move.IsCapture || move.IsPromotion || in_check || board.IsInCheck();
+
+            // Futility Pruning
+            if(can_futility_prune && 
+                !tactical && 
+                i > 0)
+            {
+                board.UndoMove(move);
+                continue;
+            }
+            
             // Principal variation search with null-window search
             bool use_full_search = q_search || i == 0;
             int new_score = -Negamax(
@@ -196,7 +193,7 @@ namespace ChessChallenge.Example
         if (!q_search && moves.Length == 0) return in_check ? ply - 100000 : 0;
 
         // Save position to transposition table
-        tt[key % TT_ENTRIES] = new Entry(
+        tt[key & 0x3FFFFF] = new Entry(
             key,
             best_score,
             best_move,
@@ -226,7 +223,7 @@ namespace ChessChallenge.Example
         68369566912511282590874449920m, 72396532057599326246617936384m, 75186737388538008131054524416m, 77027917484951889231108827392m, 73655004947793353634062267392m, 76417372019396591550492896512m, 74568981255592060493492515584m, 70529879645288096380279255040m,
     };
 
-    private readonly int[][] UnpackedPestoTables;
+    private readonly int[][] UnpackedPestoTables = new int[64][];
 
     // TODO: King Safety
     // TODO: Pawn Structure
@@ -266,7 +263,6 @@ namespace ChessChallenge.Example
     public EvilBot()
     {
         // Precompute PSTs
-        UnpackedPestoTables = new int[64][];
         UnpackedPestoTables = PackedPestoTables.Select(packedTable =>
         {
             int pieceType = 0;
@@ -275,11 +271,6 @@ namespace ChessChallenge.Example
                     .Select((byte square) => (int)((sbyte)square * 1.461) + pvm[pieceType++]))
                 .ToArray();
         }).ToArray();
-
-        // Precompute futility margins
-        futility_margins = new int[9];
-        for(int i = 1; i < 9; i++)
-            futility_margins[i] = 40 + 60*i;
     }
     }
 }
