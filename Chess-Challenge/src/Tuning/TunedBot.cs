@@ -1,17 +1,27 @@
-﻿using ChessChallenge.API;
+using ChessChallenge.API;
 using System;
 using System.Linq;
 
-namespace ChessChallenge.Example
+namespace Chess_Challenge.src.Tuning
 {
-    public class EvilBot : IChessBot
+    public class TunedBot : IChessBot
     {
+        RawParameters p;
         // Define globals to save tokens
         Board board;
         Timer timer;
         int time_limit;
         Move best_move_root;
         int[,,] history_table;
+
+        int timer_divisor = 40;
+        int RFP_depth_margin = 85;
+        int NMP_reduction = 3;
+        int NMP_reduction_divisor = 6;
+        int futility_depth_margin = 60;
+        int LMR_move_req = 8;
+        int LMR_depth_req = 3;
+        int LMR_reduction = 3;
 
 #if UCI
     long nodes;
@@ -27,7 +37,7 @@ namespace ChessChallenge.Example
         {
             board = _board;
             timer = _timer;
-            time_limit = timer.MillisecondsRemaining / 40;
+            time_limit = timer.MillisecondsRemaining / timer_divisor;
             history_table = new int[2, 7, 64];
 #if SLOW
         time_limit = timer.MillisecondsRemaining / 1;
@@ -36,7 +46,7 @@ namespace ChessChallenge.Example
         nodes = 0;
 #endif
             // Iterative Deepening Loop
-            for (int depth = 1; ;)
+            for (int depth = 0; ;)
             {
                 int score = Negamax(++depth, 0, -100000, 100000, true);
 
@@ -109,18 +119,18 @@ namespace ChessChallenge.Example
                 // Static eval calculation for pruning
                 int static_eval = Eval();
 
-                // Static Null Move Pruning
-                if (static_eval - 85 * depth >= beta) return static_eval - 85 * depth;
+                // Reverse Futility Pruning
+                if (static_eval - RFP_depth_margin * depth >= beta) return static_eval - RFP_depth_margin * depth;
                 // Null Move Pruning
                 if (do_null && depth >= 2)
                 {
                     board.TrySkipTurn();
-                    int score = -Negamax(depth - 3 - depth / 6, ply + 1, -beta, 1 - beta, false);
+                    int score = -Negamax(depth - NMP_reduction - depth / NMP_reduction_divisor, ply + 1, -beta, 1 - beta, false);
                     board.UndoSkipTurn();
                     if (score >= beta) return score;
                 }
                 // Futility Pruning Check
-                can_futility_prune = depth <= 8 && static_eval + 40 + 60 * depth <= alpha;
+                can_futility_prune = static_eval + futility_depth_margin * depth <= alpha;
             }
 
             // Fix stack overflow issue
@@ -143,30 +153,20 @@ namespace ChessChallenge.Example
 
                 Move move = moves[i];
 
-                board.MakeMove(move);
-                bool tactical = pv_node || move.IsCapture || move.IsPromotion || in_check || board.IsInCheck();
-
+                bool tactical = pv_node || move.IsCapture || move.IsPromotion || in_check;
                 // Futility Pruning
-                if (can_futility_prune &&
-                    !tactical &&
-                    i > 0)
-                {
-                    board.UndoMove(move);
-                    continue;
-                }
+                if (can_futility_prune && !tactical && i > 0) continue;
+
+                board.MakeMove(move);
                 // Using local method to simplify multiple similar calls to Negamax
-                int Search(int reduction, int next_alpha) => -Negamax(depth - reduction,
-                                                                        ply + 1,
-                                                                        -next_alpha,
-                                                                        -alpha,
-                                                                        do_null);
+                int Search(int next_alpha, int R = 1) => -Negamax(depth - R, ply + 1, -next_alpha, -alpha, do_null);
                 // PVS + LMR (Saves tokens, I will not explain, ask Tyrant)
-                if (i == 0 || q_search) new_score = Search(1, beta);
-                else if ((new_score = tactical || i < 8 || depth < 3 ?
+                if (i == 0 || q_search) new_score = Search(beta);
+                else if ((new_score = tactical || i < LMR_move_req || depth < LMR_depth_req ?
                                         alpha + 1 :
-                                        Search(3, alpha + 1)) > alpha &&
-                    (new_score = Search(1, alpha + 1)) > alpha)
-                    new_score = Search(1, beta);
+                                        Search(alpha + 1, LMR_reduction)) > alpha &&
+                    (new_score = Search(alpha + 1)) > alpha)
+                    new_score = Search(beta);
                 board.UndoMove(move);
 
                 if (new_score > best_score)
@@ -186,7 +186,6 @@ namespace ChessChallenge.Example
                     }
                 }
             }
-
             // If there are no moves return either checkmate or draw
             if (!q_search && moves.Length == 0) return in_check ? ply - 100000 : 0;
 
@@ -207,9 +206,9 @@ namespace ChessChallenge.Example
         // thanks for the compressed pst implementation Tyrant
         // None, Pawn, Knight, Bishop, Rook, Queen, King 
         private readonly short[] pvm = { 82, 337, 365, 477, 1025, 20000, // Middlegame
-                                     94, 281, 297, 512, 936, 20000}; // Endgame
-                                                                     // Big table packed with data from premade piece square tables
-                                                                     // Unpack using PackedEvaluationTables[set, rank] = file
+                                         94, 281, 297, 512, 936, 20000}; // Endgame
+                                                                         // Big table packed with data from premade piece square tables
+                                                                         // Unpack using PackedEvaluationTables[set, rank] = file
         private readonly decimal[] PackedPestoTables = {
         63746705523041458768562654720m, 71818693703096985528394040064m, 75532537544690978830456252672m, 75536154932036771593352371712m, 76774085526445040292133284352m, 3110608541636285947269332480m, 936945638387574698250991104m, 75531285965747665584902616832m,
         77047302762000299964198997571m, 3730792265775293618620982364m, 3121489077029470166123295018m, 3747712412930601838683035969m, 3763381335243474116535455791m, 8067176012614548496052660822m, 4977175895537975520060507415m, 2475894077091727551177487608m,
@@ -248,8 +247,19 @@ namespace ChessChallenge.Example
             return (middlegame * gamephase + endgame * (24 - gamephase)) / 24 * (board.IsWhiteToMove ? 1 : -1);
         }
 
-        public EvilBot()
+        public TunedBot(RawParameters search_params)
         {
+            p = search_params;
+
+            timer_divisor = p.Parameters["Timer Divisor"];
+            RFP_depth_margin = p.Parameters["RFP Depth Margin"];
+            NMP_reduction = p.Parameters["NMP Reduction"];
+            NMP_reduction_divisor = p.Parameters["NMP Reduction Divisor"];
+            futility_depth_margin = p.Parameters["Futility Depth Margin"];
+            LMR_move_req = p.Parameters["LMR Move Req"];
+            LMR_depth_req = p.Parameters["LMR Depth Req"];
+            LMR_reduction = p.Parameters["LMR Reduction"];
+
             // Precompute PSTs
             UnpackedPestoTables = PackedPestoTables.Select(packedTable =>
             {

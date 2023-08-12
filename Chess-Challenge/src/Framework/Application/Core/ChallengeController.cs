@@ -10,6 +10,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using static ChessChallenge.Application.Settings;
 using static ChessChallenge.Application.ConsoleHelper;
+using Chess_Challenge.src.Tuning;
+using System.Net;
 
 namespace ChessChallenge.Application
 {
@@ -23,7 +25,9 @@ namespace ChessChallenge.Application
             V1,
             V2,
             V3,
-            JWExample
+            JWExample,
+            TunedBotA,
+            TunedBotB
         }
 
         // Game state
@@ -163,8 +167,6 @@ namespace ChessChallenge.Application
             return Move.NullMove;
         }
 
-
-
         void NotifyTurnToMove()
         {
             //playerToMove.NotifyTurnToMove(board);
@@ -218,6 +220,8 @@ namespace ChessChallenge.Application
                 PlayerType.V2 => new ChessPlayer(new V2(), type, GameDurationMilliseconds),
                 PlayerType.V3 => new ChessPlayer(new V3(), type, GameDurationMilliseconds),
                 PlayerType.JWExample => new ChessPlayer(new JWExample(), type, GameDurationMilliseconds),
+                PlayerType.TunedBotA => new ChessPlayer(Tuner.NewBot(true), type, GameDurationMilliseconds),
+                PlayerType.TunedBotB => new ChessPlayer(Tuner.NewBot(false), type, GameDurationMilliseconds),
                 _ => new ChessPlayer(new HumanPlayer(boardUI), type)
             };
         }
@@ -469,6 +473,8 @@ namespace ChessChallenge.Application
             {
                 PlayerType.MyBot => new MyBot(),
                 PlayerType.EvilBot => new EvilBot(),
+                PlayerType.TunedBotA => Tuner.NewBot(true),
+                PlayerType.TunedBotB => Tuner.NewBot(false),
                 // If you have other bot types, you can add them here as well
                 _ => null
             };

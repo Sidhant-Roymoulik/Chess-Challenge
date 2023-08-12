@@ -37,7 +37,7 @@ public class MyBot : IChessBot
         nodes = 0;
 #endif
         // Iterative Deepening Loop
-        for (int depth = 1; ;)
+        for (int depth = 0; ;)
         {
             int score = Negamax(++depth, 0, -100000, 100000, true);
 
@@ -75,11 +75,11 @@ public class MyBot : IChessBot
         nodes++;
 #endif
         // Define search variables
-        bool root = ply == 0, 
-            in_check = board.IsInCheck(), 
+        bool root = ply == 0,
+            in_check = board.IsInCheck(),
             pv_node = beta - alpha > 1,
             can_futility_prune = false;
-        int best_score = -200000, 
+        int best_score = -200000,
             turn = board.IsWhiteToMove ? 1 : 0;
         ulong key = board.ZobristKey;
 
@@ -110,7 +110,7 @@ public class MyBot : IChessBot
             // Static eval calculation for pruning
             int static_eval = Eval();
 
-            // Static Null Move Pruning
+            // Reverse Futility Pruning
             if (static_eval - 85 * depth >= beta) return static_eval - 85 * depth;
             // Null Move Pruning
             if (do_null && depth >= 2)
@@ -124,9 +124,12 @@ public class MyBot : IChessBot
             can_futility_prune = depth <= 8 && static_eval + 40 + 60 * depth <= alpha;
         }
 
+        // Fix stack overflow issue
+        if (ply > 100) return best_score;
+
         // Move Ordering
         Move[] moves = board.GetLegalMoves(q_search && !in_check).OrderByDescending(
-            move => 
+            move =>
                 move == tt_entry.Move ? 1000000 :
                 move.IsCapture ? 1000 * (int)move.CapturePieceType - (int)move.MovePieceType :
                 history_table[turn, (int)move.MovePieceType, move.TargetSquare.Index]
@@ -141,30 +144,20 @@ public class MyBot : IChessBot
 
             Move move = moves[i];
 
-            board.MakeMove(move);
-            bool tactical = pv_node || move.IsCapture || move.IsPromotion || in_check || board.IsInCheck();
-
+            bool tactical = pv_node || move.IsCapture || move.IsPromotion || in_check;
             // Futility Pruning
-            if(can_futility_prune && 
-                !tactical && 
-                i > 0)
-            {
-                board.UndoMove(move);
-                continue;
-            }
+            if (can_futility_prune && !tactical && i > 0) continue;
+
+            board.MakeMove(move);
             // Using local method to simplify multiple similar calls to Negamax
-            int Search(int reduction, int next_alpha) => -Negamax(depth - reduction, 
-                                                                    ply + 1, 
-                                                                    -next_alpha, 
-                                                                    -alpha, 
-                                                                    do_null);
+            int Search(int next_alpha, int R = 1) => -Negamax(depth - R, ply + 1, -next_alpha, -alpha, do_null);
             // PVS + LMR (Saves tokens, I will not explain, ask Tyrant)
-            if(i == 0 || q_search) new_score = Search(1, beta);
-            else if ((new_score = tactical || i < 8 || depth < 3 ? 
-                                    alpha + 1 : 
-                                    Search(3, alpha + 1)) > alpha && 
-                (new_score = Search(1, alpha + 1)) > alpha)
-                new_score = Search(1, beta);
+            if (i == 0 || q_search) new_score = Search(beta);
+            else if ((new_score = tactical || i < 8 || depth < 3 ?
+                                    alpha + 1 :
+                                    Search(alpha + 1, 3)) > alpha &&
+                (new_score = Search(alpha + 1)) > alpha)
+                new_score = Search(beta);
             board.UndoMove(move);
 
             if (new_score > best_score)
@@ -184,7 +177,6 @@ public class MyBot : IChessBot
                 }
             }
         }
-
         // If there are no moves return either checkmate or draw
         if (!q_search && moves.Length == 0) return in_check ? ply - 100000 : 0;
 
