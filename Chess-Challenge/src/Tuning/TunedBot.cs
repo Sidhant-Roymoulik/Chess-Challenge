@@ -14,7 +14,6 @@ namespace Chess_Challenge.src.Tuning
         Move best_move_root;
         int[,,] history_table;
 
-        int timer_divisor = 40;
         int RFP_depth_margin = 85;
         int NMP_reduction = 3;
         int NMP_reduction_divisor = 6;
@@ -37,7 +36,7 @@ namespace Chess_Challenge.src.Tuning
         {
             board = _board;
             timer = _timer;
-            time_limit = timer.MillisecondsRemaining / timer_divisor;
+            time_limit = timer.MillisecondsRemaining / 30;
             history_table = new int[2, 7, 64];
 #if SLOW
         time_limit = timer.MillisecondsRemaining / 1;
@@ -148,9 +147,6 @@ namespace Chess_Challenge.src.Tuning
             int start_alpha = alpha;
             for (int i = 0, new_score = 0; i < moves.Length; i++)
             {
-                // Check if time is expired
-                if (timer.MillisecondsElapsedThisTurn > time_limit) return 100000;
-
                 Move move = moves[i];
 
                 bool tactical = pv_node || move.IsCapture || move.IsPromotion || in_check;
@@ -185,6 +181,9 @@ namespace Chess_Challenge.src.Tuning
                         break;
                     }
                 }
+
+                // Check if time is expired
+                if (timer.MillisecondsElapsedThisTurn > time_limit) return 200000;
             }
             // If there are no moves return either checkmate or draw
             if (!q_search && moves.Length == 0) return in_check ? ply - 100000 : 0;
@@ -251,7 +250,6 @@ namespace Chess_Challenge.src.Tuning
         {
             p = search_params;
 
-            timer_divisor = p.Parameters["Timer Divisor"];
             RFP_depth_margin = p.Parameters["RFP Depth Margin"];
             NMP_reduction = p.Parameters["NMP Reduction"];
             NMP_reduction_divisor = p.Parameters["NMP Reduction Divisor"];

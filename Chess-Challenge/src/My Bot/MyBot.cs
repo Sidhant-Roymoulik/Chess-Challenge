@@ -28,7 +28,7 @@ public class MyBot : IChessBot
     {
         board = _board;
         timer = _timer;
-        time_limit = timer.MillisecondsRemaining / 40;
+        time_limit = timer.MillisecondsRemaining / 30;
         history_table = new int[2, 7, 64];
 #if SLOW
         time_limit = timer.MillisecondsRemaining / 1;

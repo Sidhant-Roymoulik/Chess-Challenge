@@ -138,9 +138,6 @@ namespace ChessChallenge.Example
             int start_alpha = alpha;
             for (int i = 0, new_score = 0; i < moves.Length; i++)
             {
-                // Check if time is expired
-                if (timer.MillisecondsElapsedThisTurn > time_limit) return 100000;
-
                 Move move = moves[i];
 
                 bool tactical = pv_node || move.IsCapture || move.IsPromotion || in_check;
@@ -175,6 +172,9 @@ namespace ChessChallenge.Example
                         break;
                     }
                 }
+
+                // Check if time is expired
+                if (timer.MillisecondsElapsedThisTurn > time_limit) return 200000;
             }
             // If there are no moves return either checkmate or draw
             if (!q_search && moves.Length == 0) return in_check ? ply - 100000 : 0;
