@@ -116,7 +116,7 @@ public class MyBot : IChessBot
             if (do_null)
             {
                 board.TrySkipTurn();
-                int score = -Negamax(depth - 3 - depth / 4, ply + 1, -beta, 1 - beta, false);
+                int score = -Negamax(depth - 3 - depth / 4, ply + 1, -beta, -alpha, false);
                 board.UndoSkipTurn();
                 if (score >= beta) return score;
             }
@@ -136,12 +136,10 @@ public class MyBot : IChessBot
         ).ToArray();
 
         Move best_move = Move.NullMove;
-        int start_alpha = alpha;
-        for (int i = 0, new_score = 0; i < moves.Length; i++)
+        int start_alpha = alpha, i = 0, new_score = 0;
+        foreach (Move move in moves)
         {
-            Move move = moves[i];
-
-            bool tactical = pv_node || move.IsCapture || move.IsPromotion || in_check;
+            bool tactical = move.IsCapture || move.IsPromotion;
             // Futility Pruning
             if (can_futility_prune && !tactical && i > 0) continue;
 
@@ -176,6 +174,7 @@ public class MyBot : IChessBot
 
             // Check if time is expired
             if (timer.MillisecondsElapsedThisTurn > time_limit) return 200000;
+            i++;
         }
         // If there are no moves return either checkmate or draw
         if (!q_search && moves.Length == 0) return in_check ? ply - 100000 : 0;
