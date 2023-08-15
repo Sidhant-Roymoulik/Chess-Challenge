@@ -104,23 +104,23 @@ namespace ChessChallenge.Example
                 if (best_score >= beta) return beta;
                 alpha = Math.Max(alpha, best_score);
             }
-            else if (!pv_node && !in_check && beta < 50000)
+            else if (!pv_node && !in_check)
             {
                 // Static eval calculation for pruning
                 int static_eval = Eval();
 
                 // Reverse Futility Pruning
-                if (depth < 7 && static_eval - 109 * depth >= beta) return static_eval;
+                if (static_eval - 85 * depth >= beta) return static_eval - 85 * depth;
                 // Null Move Pruning
-                if (do_null)
+                if (do_null && depth >= 2)
                 {
                     board.TrySkipTurn();
-                    int score = -Negamax(depth - 3 - depth / 4, ply + 1, -beta, 1 - beta, false);
+                    int score = -Negamax(depth - 3 - depth / 6, ply + 1, -beta, 1 - beta, false);
                     board.UndoSkipTurn();
                     if (score >= beta) return score;
                 }
                 // Futility Pruning Check
-                can_futility_prune = depth < 6 && static_eval + 94 * depth <= alpha;
+                can_futility_prune = depth <= 8 && static_eval + 40 + 60 * depth <= alpha;
             }
 
             // Fix stack overflow issue
@@ -149,7 +149,7 @@ namespace ChessChallenge.Example
                 int Search(int next_alpha, int R = 1) => -Negamax(depth - R, ply + 1, -next_alpha, -alpha, do_null);
                 // PVS + LMR (Saves tokens, I will not explain, ask Tyrant)
                 if (i == 0 || q_search) new_score = Search(beta);
-                else if ((new_score = tactical || i < 6 || depth < 3 ?
+                else if ((new_score = tactical || i < 8 || depth < 3 ?
                                         alpha + 1 :
                                         Search(alpha + 1, 3)) > alpha &&
                     (new_score = Search(alpha + 1)) > alpha)

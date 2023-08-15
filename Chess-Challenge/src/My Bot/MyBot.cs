@@ -217,10 +217,9 @@ public class MyBot : IChessBot
     // TODO: Mobility
     private int Eval()
     {
-        int middlegame = 0, endgame = 0, gamephase = 0, sideToMove = 2;
-        for (; --sideToMove >= 0;)
-        {
-            for (int piece = -1, square; ++piece < 6;)
+        int middlegame = 0, endgame = 0, gamephase = 0, sideToMove = 2, piece, square;
+        for (; --sideToMove >= 0; middlegame = -middlegame, endgame = -endgame)
+            for (piece = -1; ++piece < 6;)
                 for (ulong mask = board.GetPieceBitboard((PieceType)piece + 1, sideToMove > 0); mask != 0;)
                 {
                     // Gamephase, middlegame -> endgame
@@ -231,9 +230,6 @@ public class MyBot : IChessBot
                     middlegame += UnpackedPestoTables[square][piece];
                     endgame += UnpackedPestoTables[square][piece + 6];
                 }
-            middlegame = -middlegame;
-            endgame = -endgame;
-        }
         return (middlegame * gamephase + endgame * (24 - gamephase)) / 24 * (board.IsWhiteToMove ? 1 : -1);
     }
 
