@@ -37,29 +37,39 @@ public class MyBot : IChessBot
         nodes = 0;
 #endif
         // Iterative Deepening Loop
-        for (int depth = 0; ;)
+        for (int depth = 1, alpha = -100000, beta = 100000; ;)
         {
-            int score = Negamax(++depth, 0, -100000, 100000, true);
+            int score = Negamax(depth, 0, alpha, beta, true);
 
             // Check if time is expired
             if (timer.MillisecondsElapsedThisTurn > time_limit)
                 break;
+
+            if (score <= alpha) alpha -= 100;
+            else if (score >= beta) beta += 100;
+            else
+            {
 #if UCI
-            // UCI Debug Logging
-            Console.WriteLine("info depth {0,2} score {1,6} nodes {2,9} nps {3,8} time {4,5} pv {5}{6}",
-                depth,
-                score,
-                nodes,
-                1000 * nodes / (timer.MillisecondsElapsedThisTurn + 1),
-                timer.MillisecondsElapsedThisTurn,
-                best_move_root.StartSquare.Name,
-                best_move_root.TargetSquare.Name
-            );
+                // UCI Debug Logging
+                Console.WriteLine("info depth {0,2} score {1,6} nodes {2,9} nps {3,8} time {4,5} pv {5}{6}",
+                    depth,
+                    score,
+                    nodes,
+                    1000 * nodes / (timer.MillisecondsElapsedThisTurn + 1),
+                    timer.MillisecondsElapsedThisTurn,
+                    best_move_root.StartSquare.Name,
+                    best_move_root.TargetSquare.Name
+                );
 #endif
 
-            // If a checkmate is found, exit search early to save time
-            if (score > 50000)
-                break;
+                // If a checkmate is found, exit search early to save time
+                if (score > 50000)
+                    break;
+
+                alpha = score - 20;
+                beta = score + 20;
+                depth++;
+            }
         }
 #if UCI
         Console.WriteLine();
@@ -135,8 +145,12 @@ public class MyBot : IChessBot
                 history_table[turn, (int)move.MovePieceType, move.TargetSquare.Index]
         ).ToArray();
 
-        Move best_move = Move.NullMove;
+        Move best_move = default;
         int start_alpha = alpha, i = 0, new_score = 0;
+
+        // Using local method to simplify multiple similar calls to Negamax
+        int Search(int next_alpha, int R = 1) => new_score = -Negamax(depth - R, ply + 1, -next_alpha, -alpha, do_null);
+
         foreach (Move move in moves)
         {
             bool tactical = move.IsCapture || move.IsPromotion;
@@ -144,15 +158,13 @@ public class MyBot : IChessBot
             if (can_futility_prune && !tactical && i > 0) continue;
 
             board.MakeMove(move);
-            // Using local method to simplify multiple similar calls to Negamax
-            int Search(int next_alpha, int R = 1) => -Negamax(depth - R, ply + 1, -next_alpha, -alpha, do_null);
             // PVS + LMR (Saves tokens, I will not explain, ask Tyrant)
-            if (i == 0 || q_search) new_score = Search(beta);
-            else if ((new_score = tactical || i < 6 || depth < 3 ?
-                                    alpha + 1 :
-                                    Search(alpha + 1, 3)) > alpha &&
-                (new_score = Search(alpha + 1)) > alpha)
-                new_score = Search(beta);
+            if (i == 0 || q_search) Search(beta);
+            else if ((tactical || i < 6 || depth < 3 ?
+                        new_score = alpha + 1 :
+                        Search(alpha + 1, 3)) > alpha &&
+                Search(alpha + 1) > alpha)
+                Search(beta);
             board.UndoMove(move);
 
             if (new_score > best_score)
