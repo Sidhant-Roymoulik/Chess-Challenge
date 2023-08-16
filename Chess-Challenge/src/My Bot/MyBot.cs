@@ -140,8 +140,9 @@ public class MyBot : IChessBot
         // Move Ordering
         Move[] moves = board.GetLegalMoves(q_search && !in_check).OrderByDescending(
             move =>
-                move == tt_entry.Move ? 1000000 :
-                move.IsCapture ? 1000 * (int)move.CapturePieceType - (int)move.MovePieceType :
+                move == tt_entry.Move ? 10000000 :
+                move.IsCapture ? 10000 * (int)move.CapturePieceType - (int)move.MovePieceType :
+                move.IsPromotion ? 100000 :
                 history_table[turn, (int)move.MovePieceType, move.TargetSquare.Index]
         ).ToArray();
 
