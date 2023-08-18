@@ -1,4 +1,4 @@
-﻿// #define UCI
+﻿#define UCI
 // #define SLOW
 
 using ChessChallenge.API;
@@ -51,10 +51,25 @@ public class MyBot : IChessBot
             else
             {
 #if UCI
+                string score_string = score.ToString();
+                if (score > 50000)
+                {
+                    int pliesToMate = 99999 - score;
+                    int mateInN = (pliesToMate / 2) + (pliesToMate % 2);
+                    score_string = "mate " + mateInN;
+                }
+                if (score < -50000)
+                {
+                    int pliesToMate = -99999 - score;
+                    int mateInN = -((pliesToMate / 2) + (pliesToMate % 2));
+                    score_string = "mate " + mateInN;
+                }
+
+
                 // UCI Debug Logging
                 Console.WriteLine("info depth {0,2} score {1,6} nodes {2,9} nps {3,8} time {4,5} pv {5}{6}",
                     depth,
-                    score,
+                    score_string,
                     nodes,
                     1000 * nodes / (timer.MillisecondsElapsedThisTurn + 1),
                     timer.MillisecondsElapsedThisTurn,
