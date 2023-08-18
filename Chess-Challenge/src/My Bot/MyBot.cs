@@ -13,6 +13,7 @@ public class MyBot : IChessBot
     int time_limit;
     Move best_move_root;
     int[,,] history_table;
+    // Move[] killer_moves = new Move[256];
 
 #if UCI
     long nodes;
@@ -112,7 +113,7 @@ public class MyBot : IChessBot
         if (q_search)
         {
             best_score = Eval();
-            if (best_score >= beta) return beta;
+            if (best_score >= beta) return best_score;
             alpha = Math.Max(alpha, best_score);
         }
         else if (!pv_node && !in_check)
@@ -140,9 +141,15 @@ public class MyBot : IChessBot
         // Move Ordering
         Move[] moves = board.GetLegalMoves(q_search && !in_check).OrderByDescending(
             move =>
+                // Hash move
                 move == tt_entry.Move ? 10_000_000 :
+                // MVV-LVA
                 move.IsCapture ? 1_000_000 * (int)move.CapturePieceType - (int)move.MovePieceType :
+                // Promotion
                 move.IsPromotion ? 8_000_000 :
+                // Killer Moves
+                // move == killer_moves[ply] ? 900_000 :
+                // History Heuristic
                 history_table[ply & 1, (int)move.MovePieceType, move.TargetSquare.Index]
         ).ToArray();
 
@@ -151,6 +158,9 @@ public class MyBot : IChessBot
 
         // Using local method to simplify multiple similar calls to Negamax
         int Search(int next_alpha, int R = 1) => new_score = -Negamax(depth - R, ply, -next_alpha, -alpha, do_null);
+
+        // If there are no moves return either checkmate or draw
+        if (!q_search && moves.Length == 0) return in_check ? ply - 100000 : 0;
 
         foreach (Move move in moves)
         {
@@ -179,7 +189,11 @@ public class MyBot : IChessBot
                 // Beta Cutoff
                 if (alpha >= beta)
                 {
-                    if (!q_search && !move.IsCapture) history_table[ply & 1, (int)move.MovePieceType, move.TargetSquare.Index] += depth * depth;
+                    if (!q_search && !move.IsCapture)
+                        // {
+                        history_table[ply & 1, (int)move.MovePieceType, move.TargetSquare.Index] += depth * depth;
+                    //     killer_moves[ply] = best_move;
+                    // }
                     break;
                 }
             }
@@ -188,8 +202,6 @@ public class MyBot : IChessBot
             if (timer.MillisecondsElapsedThisTurn > time_limit) return 200000;
             i++;
         }
-        // If there are no moves return either checkmate or draw
-        if (!q_search && moves.Length == 0) return in_check ? ply - 100000 : 0;
 
         // Save position to transposition table
         tt[key & 0x3FFFFF] = new Entry(
