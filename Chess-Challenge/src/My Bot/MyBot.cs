@@ -89,8 +89,7 @@ public class MyBot : IChessBot
             in_check = board.IsInCheck(),
             pv_node = beta - alpha > 1,
             can_futility_prune = false;
-        int best_score = -200000,
-            turn = board.IsWhiteToMove ? 1 : 0;
+        int best_score = -200000;
         ulong key = board.ZobristKey;
 
         // Check for draw by repetition
@@ -123,7 +122,7 @@ public class MyBot : IChessBot
             // Reverse Futility Pruning
             if (depth < 7 && static_eval - 109 * depth >= beta) return static_eval;
             // Null Move Pruning
-            if (do_null)
+            if (do_null && depth >= 2)
             {
                 board.TrySkipTurn();
                 int score = -Negamax(depth - 3 - depth / 4, ply + 1, -beta, -alpha, false);
@@ -140,10 +139,10 @@ public class MyBot : IChessBot
         // Move Ordering
         Move[] moves = board.GetLegalMoves(q_search && !in_check).OrderByDescending(
             move =>
-                move == tt_entry.Move ? 10000000 :
-                move.IsCapture ? 10000 * (int)move.CapturePieceType - (int)move.MovePieceType :
-                move.IsPromotion ? 100000 :
-                history_table[turn, (int)move.MovePieceType, move.TargetSquare.Index]
+                move == tt_entry.Move ? 10_000_000 :
+                move.IsCapture ? 1_000_000 * (int)move.CapturePieceType - (int)move.MovePieceType :
+                move.IsPromotion ? 8_000_000 :
+                history_table[ply & 1, (int)move.MovePieceType, move.TargetSquare.Index]
         ).ToArray();
 
         Move best_move = default;
@@ -180,7 +179,7 @@ public class MyBot : IChessBot
                 // Beta Cutoff
                 if (alpha >= beta)
                 {
-                    if (!q_search && !move.IsCapture) history_table[turn, (int)move.MovePieceType, move.TargetSquare.Index] += depth * depth;
+                    if (!q_search && !move.IsCapture) history_table[ply & 1, (int)move.MovePieceType, move.TargetSquare.Index] += depth * depth;
                     break;
                 }
             }
