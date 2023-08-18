@@ -85,19 +85,16 @@ public class MyBot : IChessBot
         nodes++;
 #endif
         // Define search variables
-        bool root = ply == 0,
+        bool root = ply++ == 0,
             in_check = board.IsInCheck(),
-            pv_node = beta - alpha > 1,
-            can_futility_prune = false;
-        int best_score = -200000;
-        ulong key = board.ZobristKey;
+            pv_node = beta - alpha > 1;
 
         // Check for draw by repetition
         if (!root && board.IsRepeatedPosition()) return 0;
 
         if (in_check) depth++;
 
-        bool q_search = depth <= 0;
+        ulong key = board.ZobristKey;
 
         // TT Pruning
         Entry tt_entry = tt[key & 0x3FFFFF];
@@ -107,6 +104,10 @@ public class MyBot : IChessBot
                 (tt_entry.Flag == 2 && tt_entry.Score >= beta)))
             return tt_entry.Score;
 
+        bool q_search = depth <= 0,
+            can_futility_prune = false;
+        int best_score = -200000;
+
         // Delta Pruning
         if (q_search)
         {
@@ -114,7 +115,7 @@ public class MyBot : IChessBot
             if (best_score >= beta) return beta;
             alpha = Math.Max(alpha, best_score);
         }
-        else if (!pv_node && !in_check && beta < 50000)
+        else if (!pv_node && !in_check)
         {
             // Static eval calculation for pruning
             int static_eval = Eval();
@@ -125,7 +126,7 @@ public class MyBot : IChessBot
             if (do_null && depth >= 2)
             {
                 board.TrySkipTurn();
-                int score = -Negamax(depth - 3 - depth / 4, ply + 1, -beta, -alpha, false);
+                int score = -Negamax(depth - 3 - depth / 4, ply, -beta, -alpha, false);
                 board.UndoSkipTurn();
                 if (score >= beta) return score;
             }
@@ -149,7 +150,7 @@ public class MyBot : IChessBot
         int start_alpha = alpha, i = 0, new_score = 0;
 
         // Using local method to simplify multiple similar calls to Negamax
-        int Search(int next_alpha, int R = 1) => new_score = -Negamax(depth - R, ply + 1, -next_alpha, -alpha, do_null);
+        int Search(int next_alpha, int R = 1) => new_score = -Negamax(depth - R, ply, -next_alpha, -alpha, do_null);
 
         foreach (Move move in moves)
         {
@@ -161,9 +162,8 @@ public class MyBot : IChessBot
             // PVS + LMR (Saves tokens, I will not explain, ask Tyrant)
             if (i == 0 || q_search) Search(beta);
             else if ((tactical || i < 6 || depth < 3 ?
-                        new_score = alpha + 1 :
-                        Search(alpha + 1, 3)) > alpha &&
-                Search(alpha + 1) > alpha)
+                        new_score = alpha + 1 : Search(alpha + 1, 3)) > alpha &&
+                    Search(alpha + 1) > alpha)
                 Search(beta);
             board.UndoMove(move);
 
@@ -251,9 +251,8 @@ public class MyBot : IChessBot
         UnpackedPestoTables = PackedPestoTables.Select(packedTable =>
         {
             int pieceType = 0;
-            return decimal.GetBits(packedTable).Take(3)
-                .SelectMany(c => BitConverter.GetBytes(c)
-                    .Select(square => (int)((sbyte)square * 1.461) + pvm[pieceType++]))
+            return new System.Numerics.BigInteger(packedTable).ToByteArray().Take(12)
+                    .Select(square => (int)((sbyte)square * 1.461) + pvm[pieceType++])
                 .ToArray();
         }).ToArray();
     }
