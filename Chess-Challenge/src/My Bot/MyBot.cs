@@ -1,4 +1,4 @@
-﻿#define UCI
+﻿// #define UCI
 // #define SLOW
 
 using ChessChallenge.API;
@@ -13,7 +13,7 @@ public class MyBot : IChessBot
     int time_limit;
     Move best_move_root;
     int[,,] history_table;
-    // Move[] killer_moves = new Move[256];
+    // Move[] killer_moves = new Move[128];
 
 #if UCI
     long nodes;
@@ -61,13 +61,13 @@ public class MyBot : IChessBot
                 if (score < -50000)
                 {
                     int pliesToMate = -99999 - score;
-                    int mateInN = -((pliesToMate / 2) + (pliesToMate % 2));
+                    int mateInN = (pliesToMate / 2) + (pliesToMate % 2);
                     score_string = "mate " + mateInN;
                 }
 
 
                 // UCI Debug Logging
-                Console.WriteLine("info depth {0,2} score {1,6} nodes {2,9} nps {3,8} time {4,5} pv {5}{6}",
+                Console.WriteLine("info depth {0,2} score {1,7} nodes {2,9} nps {3,8} time {4,5} pv {5}{6}",
                     depth,
                     score_string,
                     nodes,
@@ -151,7 +151,7 @@ public class MyBot : IChessBot
         }
 
         // Fix stack overflow issue
-        if (ply > 100) return best_score;
+        if (ply > 100) return Eval();
 
         // Move Ordering
         Move[] moves = board.GetLegalMoves(q_search && !in_check).OrderByDescending(
@@ -179,15 +179,16 @@ public class MyBot : IChessBot
 
         foreach (Move move in moves)
         {
-            bool tactical = move.IsCapture || move.IsPromotion;
             // Futility Pruning
-            if (can_futility_prune && !tactical && i > 0) continue;
+            if (can_futility_prune && !(move.IsCapture || move.IsPromotion) && i > 0) continue;
 
             board.MakeMove(move);
             // PVS + LMR (Saves tokens, I will not explain, ask Tyrant)
-            if (i == 0 || q_search) Search(beta);
-            else if ((tactical || i < 6 || depth < 3 ?
-                        new_score = alpha + 1 : Search(alpha + 1, 3)) > alpha &&
+            if (i == 0 || q_search)
+                Search(beta);
+            else if ((i < 6 || depth < 3 ?
+                        new_score = alpha + 1 :
+                        Search(alpha + 1, 3)) > alpha &&
                     Search(alpha + 1) > alpha)
                 Search(beta);
             board.UndoMove(move);
@@ -207,7 +208,7 @@ public class MyBot : IChessBot
                     if (!q_search && !move.IsCapture)
                         // {
                         history_table[ply & 1, (int)move.MovePieceType, move.TargetSquare.Index] += depth * depth;
-                    //     killer_moves[ply] = best_move;
+                    // killer_moves[ply] = best_move;
                     // }
                     break;
                 }
