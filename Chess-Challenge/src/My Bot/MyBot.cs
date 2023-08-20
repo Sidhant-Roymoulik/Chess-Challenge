@@ -15,7 +15,7 @@ public class MyBot : IChessBot
     int[,,] history_table;
     int gamephase;
     // Move[] killer_moves = new Move[128];
-    // int[] move_scores = new int[256];
+    int[] move_scores = new int[256];
 
 #if UCI
     long nodes;
@@ -119,7 +119,8 @@ public class MyBot : IChessBot
 
         bool q_search = depth <= 0,
             can_futility_prune = false;
-        int best_score = -200000;
+        int best_score = -200000,
+            moves_scored = 0;
 
         // Delta Pruning
         if (q_search)
@@ -150,9 +151,13 @@ public class MyBot : IChessBot
         // Fix stack overflow issue
         if (ply > 100) return Eval();
 
-        // Move Ordering
-        Move[] moves = board.GetLegalMoves(q_search && !in_check).OrderByDescending(
-            move =>
+        // Generate appropriate moves depending on whether we're in QSearch
+        Span<Move> moves = stackalloc Move[256];
+        board.GetLegalMovesNonAlloc(ref moves, q_search && !in_check);
+
+        // Order moves in reverse order -> negative values are ordered higher hence the flipped values
+        foreach (Move move in moves)
+            move_scores[moves_scored++] = -(
                 // Hash move
                 move == tt_entry.Move ? 10_000_000 :
                 // MVV-LVA
@@ -163,28 +168,9 @@ public class MyBot : IChessBot
                 // move == killer_moves[ply] ? 900_000 :
                 // History Heuristic
                 history_table[ply & 1, (int)move.MovePieceType, move.TargetSquare.Index]
-        ).ToArray();
+            );
 
-        // Generate appropriate moves depending on whether we're in QSearch
-        // Span<Move> moves = stackalloc Move[256];
-        // board.GetLegalMovesNonAlloc(ref moves, q_search && !in_check);
-
-        // Order moves in reverse order -> negative values are ordered higher hence the flipped values
-        // foreach (Move move in moves)
-        //     move_scores[moves_scored++] = -(
-        //         // Hash move
-        //         move == tt_entry.Move ? 10_000_000 :
-        //         // MVV-LVA
-        //         move.IsCapture ? 1_000_000 * (int)move.CapturePieceType - (int)move.MovePieceType :
-        //         // Promotion
-        //         move.IsPromotion ? 8_000_000 :
-        //         // Killer Moves
-        //         // move == killer_moves[ply] ? 900_000 :
-        //         // History Heuristic
-        //         history_table[ply & 1, (int)move.MovePieceType, move.TargetSquare.Index]
-        //     );
-
-        // move_scores.AsSpan(0, moves.Length).Sort(moves);
+        move_scores.AsSpan(0, moves.Length).Sort(moves);
 
         // If there are no moves return either checkmate or draw
         if (!q_search && moves.Length == 0) return in_check ? ply - 100000 : 0;
