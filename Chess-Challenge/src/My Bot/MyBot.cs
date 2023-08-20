@@ -15,6 +15,7 @@ public class MyBot : IChessBot
     int[,,] history_table;
     int gamephase;
     // Move[] killer_moves = new Move[128];
+    // int[] move_scores = new int[256];
 
 #if UCI
     long nodes;
@@ -78,11 +79,6 @@ public class MyBot : IChessBot
                     best_move_root.TargetSquare.Name
                 );
 #endif
-
-                // If a checkmate is found, exit search early to save time
-                if (score > 50000)
-                    break;
-
                 alpha = score - 20;
                 beta = score + 20;
                 depth++;
@@ -168,6 +164,27 @@ public class MyBot : IChessBot
                 // History Heuristic
                 history_table[ply & 1, (int)move.MovePieceType, move.TargetSquare.Index]
         ).ToArray();
+
+        // Generate appropriate moves depending on whether we're in QSearch
+        // Span<Move> moves = stackalloc Move[256];
+        // board.GetLegalMovesNonAlloc(ref moves, q_search && !in_check);
+
+        // Order moves in reverse order -> negative values are ordered higher hence the flipped values
+        // foreach (Move move in moves)
+        //     move_scores[moves_scored++] = -(
+        //         // Hash move
+        //         move == tt_entry.Move ? 10_000_000 :
+        //         // MVV-LVA
+        //         move.IsCapture ? 1_000_000 * (int)move.CapturePieceType - (int)move.MovePieceType :
+        //         // Promotion
+        //         move.IsPromotion ? 8_000_000 :
+        //         // Killer Moves
+        //         // move == killer_moves[ply] ? 900_000 :
+        //         // History Heuristic
+        //         history_table[ply & 1, (int)move.MovePieceType, move.TargetSquare.Index]
+        //     );
+
+        // move_scores.AsSpan(0, moves.Length).Sort(moves);
 
         // If there are no moves return either checkmate or draw
         if (!q_search && moves.Length == 0) return in_check ? ply - 100000 : 0;
