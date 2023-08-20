@@ -13,6 +13,7 @@ public class MyBot : IChessBot
     int time_limit;
     Move best_move_root;
     int[,,] history_table;
+    int gamephase;
     // Move[] killer_moves = new Move[128];
 
 #if UCI
@@ -139,7 +140,7 @@ public class MyBot : IChessBot
             // Reverse Futility Pruning
             if (depth < 7 && static_eval - 109 * depth >= beta) return static_eval;
             // Null Move Pruning
-            if (do_null && depth >= 2)
+            if (do_null && depth >= 2 && gamephase > 0)
             {
                 board.TrySkipTurn();
                 int score = -Negamax(depth - 3 - depth / 4, ply, -beta, -alpha, false);
@@ -257,7 +258,8 @@ public class MyBot : IChessBot
     // TODO: Mobility
     private int Eval()
     {
-        int middlegame = 0, endgame = 0, gamephase = 0, sideToMove = 2, piece, square;
+        int middlegame = 0, endgame = 0, sideToMove = 2, piece, square;
+        gamephase = 0;
         for (; --sideToMove >= 0; middlegame = -middlegame, endgame = -endgame)
             for (piece = -1; ++piece < 6;)
                 for (ulong mask = board.GetPieceBitboard((PieceType)piece + 1, sideToMove > 0); mask != 0;)
