@@ -8,23 +8,21 @@ using System.Linq;
 public class MyBot : IChessBot
 {
     // Define globals to save tokens
-    Board board;
-    Timer timer;
-    int time_limit;
-    Move best_move_root;
-    int[,,] history_table;
-    int gamephase;
+    private Board board;
+    private Timer timer;
+    private int time_limit;
+    private Move best_move_root;
+    private int[,,] history_table;
+    private int gamephase;
     // Move[] killer_moves = new Move[128];
-    int[] move_scores = new int[256];
+    private readonly int[] move_scores = new int[256];
+
+    // TT Definition
+    private readonly (ulong, int, Move, int, int)[] tt = new (ulong, int, Move, int, int)[0x400000];
 
 #if UCI
-    long nodes;
+    private long nodes;
 #endif
-
-    // TT Entry Definition
-    record struct Entry(ulong Key, int Score, Move Move, int Depth, int Flag);
-    // TT Definition
-    Entry[] tt = new Entry[0x400000];
 
     // Required Think Method
     public Move Think(Board _board, Timer _timer)
@@ -108,19 +106,21 @@ public class MyBot : IChessBot
         if (in_check) depth++;
 
         ulong key = board.ZobristKey;
+        ref var tt_entry = ref tt[key & 0x3FFFFF];
+        int best_score = -200000,
+            moves_scored = 0,
+            tt_entry_score = tt_entry.Item2,
+            tt_entry_flag = tt_entry.Item5;
 
         // TT Pruning
-        Entry tt_entry = tt[key & 0x3FFFFF];
-        if (tt_entry.Key == key && !root && tt_entry.Depth >= depth && (
-                tt_entry.Flag == 1 ||
-                (tt_entry.Flag == 0 && tt_entry.Score <= alpha) ||
-                (tt_entry.Flag == 2 && tt_entry.Score >= beta)))
-            return tt_entry.Score;
+        if (tt_entry.Item1 == key && !root && tt_entry.Item4 >= depth && (
+                tt_entry_flag == 1 ||
+                (tt_entry_flag == 0 && tt_entry_score <= alpha) ||
+                (tt_entry_flag == 2 && tt_entry_score >= beta)))
+            return tt_entry_score;
 
         bool q_search = depth <= 0,
             can_futility_prune = false;
-        int best_score = -200000,
-            moves_scored = 0;
 
         // Delta Pruning
         if (q_search)
@@ -159,7 +159,7 @@ public class MyBot : IChessBot
         foreach (Move move in moves)
             move_scores[moves_scored++] = -(
                 // Hash move
-                move == tt_entry.Move ? 10_000_000 :
+                move == tt_entry.Item3 ? 10_000_000 :
                 // MVV-LVA
                 move.IsCapture ? 1_000_000 * (int)move.CapturePieceType - (int)move.MovePieceType :
                 // Promotion
@@ -224,7 +224,7 @@ public class MyBot : IChessBot
         }
 
         // Save position to transposition table
-        tt[key & 0x3FFFFF] = new Entry(
+        tt[key & 0x3FFFFF] = (
             key,
             best_score,
             best_move,
